@@ -64,6 +64,7 @@ MIGRATION-TGWS.md
 UI-REDESIGN-PLAN.md
 AUTHORS.md
 *.private.md
+docs/AI_LAB_MIGRATION.md
 .env
 .env.*
 

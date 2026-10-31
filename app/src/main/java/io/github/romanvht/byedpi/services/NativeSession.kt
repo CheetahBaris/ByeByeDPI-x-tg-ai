@@ -1,6 +1,10 @@
 package io.github.romanvht.byedpi.services
 
 import android.app.Service
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -10,6 +14,7 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.RemoteException
 import android.util.Log
+import androidx.core.os.BundleCompat
 import io.github.romanvht.byedpi.core.ByeDpiProxy
 import io.github.romanvht.byedpi.core.TProxyService
 import io.github.romanvht.byedpi.data.Configuration
@@ -129,7 +134,22 @@ internal class NativeSession(
             }
             EngineProtocol.START -> start(message.data)
             EngineProtocol.STOP -> stop()
+            EngineProtocol.SET_NETWORK -> applyNetwork(message.data)
         }
+    }
+
+    /**
+     * Привязка процесса движка к сети. Нужна лаборатории: Wi-Fi остаётся для
+     * LM Studio, а исходящие соединения ciadpi должны идти через мобильную сеть.
+     * null — вернуть системную сеть по умолчанию.
+     */
+    private fun applyNetwork(data: Bundle) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val network = BundleCompat.getParcelable(data, EngineProtocol.NETWORK, Network::class.java)
+        val manager = service.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return
+        val ok = runCatching { manager.bindProcessToNetwork(network) }.getOrDefault(false)
+        Log.d(TAG, "Engine network: ${network ?: "default"} (bound=$ok)")
     }
 
     private fun attachClient(replyTo: Messenger) {

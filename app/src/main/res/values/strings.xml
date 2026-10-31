@@ -1,6 +1,7 @@
 <resources>
     <string name="byedpi_docs">https://github.com/hufrea/byedpi/blob/main/README.md</string>
     <string name="app_name">ByeByeDPI x tg</string>
+    <string name="ai_lab">AI-подбор стратегий</string>
     <string name="cmd_documentation">Документация ByeDPI</string>
     <string name="toggle_connect">Вкл/Выкл</string>
     <string name="vpn_connect">Подключить</string>
@@ -311,4 +312,57 @@
     <string name="notification_disconnect">Отключить</string>
     <string name="port_is_not_available">Порт %1$d занят, попробуйте другой</string>
     <string name="ewenloy_tg_open_proxy_summary_ws">Подключить Telegram к MTProto-прокси (WS, порт 1082)</string>
+
+    <!-- AI Lab (подбор стратегий) -->
+    <string name="lab_subtitle">Мобильная сеть • свой движок на порту 1081</string>
+    <string name="lab_status_ready">Готов к запуску</string>
+    <string name="lab_best_none">Лучшая: —</string>
+
+    <string name="lab_connection_title">Подключение к LLM (LM Studio / OpenAI API)</string>
+    <string name="lab_base_url_hint">Адрес API (IP:порт или полный URL)</string>
+    <string name="lab_scan_mode_hint">Как искать сервер</string>
+    <string name="lab_scan_btn">Найти сервер</string>
+    <string name="lab_check_btn">Проверить LLM</string>
+    <string name="lab_model_hint">Модель</string>
+    <string name="lab_api_key_hint">API-ключ (не нужен для LM Studio)</string>
+    <string name="lab_conn_not_checked">LM Studio не проверен</string>
+    <string name="lab_connection_hint">По Wi-Fi: в LM Studio включи «Serve on Local Network», ПК и телефон — в одной сети. По кабелю: adb reverse tcp:1234 tcp:1234, адрес http://127.0.0.1:1234/v1, «К модели» — USB / локально. Если модель запущена на самом телефоне — выбери режим «Локально (адрес из поля)»: проверяется ровно тот адрес, что указан выше (например, http://localhost:1234/v1). Можно ввести только IP:порт — /v1 добавится автоматически.</string>
+
+    <string name="lab_network_title">Сеть</string>
+    <string name="lab_llm_network_hint">К модели (LM Studio) ходить через</string>
+    <string name="lab_test_network_hint">Сайты проверять через</string>
+    <string name="lab_bring_up">Поднимать сеть, если она не активна (LTE при включённом Wi-Fi)</string>
+    <string name="lab_show_networks_btn">Показать сети</string>
+    <string name="lab_network_hint">Для режима «модель по Wi-Fi, тесты по LTE»: оставь Wi-Fi включённым, выбери для модели Wi-Fi, для сайтов — мобильную сеть. Отключи «Wi-Fi-ассистент»/автопереключение на мобильные данные, иначе система может сама перекинуть трафик. Мобильная сеть должна быть активна (мобильные данные включены).</string>
+
+    <string name="lab_params_title">Параметры подбора</string>
+    <string name="lab_rounds">Раундов</string>
+    <string name="lab_repeats">Повторов</string>
+    <string name="lab_timeout">Таймаут, с</string>
+    <string name="lab_candidates">Кандидатов</string>
+    <string name="lab_patience">Стоп без прироста</string>
+    <string name="lab_concurrency">Параллельно</string>
+    <string name="lab_max_tokens">Ответ, токенов</string>
+    <string name="lab_context_tokens">Контекст</string>
+    <string name="lab_auto_apply">Автоматически применять лучшую стратегию</string>
+    <string name="lab_reuse_baseline">Переиспользовать baseline между раундами</string>
+    <string name="lab_full_kb">Полная база знаний (нужен контекст 16k+)</string>
+    <string name="lab_params_hint">Перед запуском отключи основной VPN/Proxy приложения: лаборатория поднимает отдельный движок на порту 1081. Сеть для тестов выбирается в блоке «Сеть» выше.</string>
+
+    <string name="lab_sites_title">Сайты для проверки</string>
+    <string name="lab_load_preset_btn">Загрузить</string>
+    <string name="lab_sites_hint">По одному сайту в строке. # — комментарий.</string>
+
+    <string name="lab_strategies_title">Стартовые стратегии</string>
+    <string name="lab_strategies_hint">Синтаксис ciadpi. Победитель на МегаФоне/LTE: -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1. Не используй -d 1 — валидатор его отклонит.</string>
+
+    <string name="lab_log_title">Журнал</string>
+    <string name="lab_start_btn">Старт</string>
+    <string name="lab_stop_btn">Стоп</string>
+    <string name="lab_hide_btn">Скрыть</string>
+    <string name="lab_show_btn">Показать</string>
+    <string name="lab_apply_btn">Применить</string>
+    <string name="lab_top_btn">Топ</string>
+    <string name="lab_report_btn">Отчёт</string>
+    <string name="lab_clear_btn">Очистить</string>
 </resources>

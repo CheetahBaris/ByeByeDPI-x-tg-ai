@@ -20,6 +20,9 @@
 -keep,allowoptimization class io.github.romanvht.byedpi.services.** { *; }
 -keep,allowoptimization class io.github.romanvht.byedpi.receiver.** { *; }
 
+# AI Lab: Gson-отчёты/топ и состояние экрана должны переживать R8
+-keep,allowoptimization class io.github.romanvht.byedpi.lab.** { *; }
+
 -keep class io.github.romanvht.byedpi.fragments.** {
     <init>();
 }

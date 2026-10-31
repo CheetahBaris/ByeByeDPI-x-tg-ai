@@ -11,6 +11,7 @@ internal object EngineProtocol {
     const val FAILED = 6
     const val STOPPING = 7
     const val CONFIGURED = 8
+    const val SET_NETWORK = 9
 
     const val CONTROL_ACTION = "${BuildConfig.APPLICATION_ID}.ENGINE"
     const val BOUND_CONTROL_ACTION = "${BuildConfig.APPLICATION_ID}.BOUND_ENGINE"
@@ -29,4 +30,5 @@ internal object EngineProtocol {
     const val PID = "pid"
     const val STATE = "state"
     const val ERROR = "error"
+    const val NETWORK = "network"
 }
