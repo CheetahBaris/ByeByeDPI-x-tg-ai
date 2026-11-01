@@ -114,7 +114,13 @@ class LabRunner(
             } else {
                 LabNetwork.acquire(ctx, cfg.llmNetwork, cfg.bringUpNetwork)
             }
-            llm = LlmClient(cfg.baseUrl, cfg.model, cfg.apiKey, llmNetwork)
+            llm = LlmClient(
+                baseUrl = cfg.baseUrl,
+                model = cfg.model,
+                apiKey = cfg.apiKey,
+                network = llmNetwork,
+                readTimeoutMs = cfg.llmTimeoutSec.coerceIn(10, 1800) * 1000
+            )
             log(
                 "LLM: ${llm?.baseUrl} (model=${cfg.model.ifBlank { "auto" }}) через " +
                     LabNetwork.targetLabel(cfg.llmNetwork) +
@@ -427,8 +433,8 @@ class LabRunner(
         tried: Collection<String>
     ): LlmAnalysis {
         val client = llm ?: throw IllegalStateException("LLM не настроена")
-        val system = PromptBuilder.system(ctx, cfg.fullKb)
-        val systemTokens = estimateTokens(system)
+        val system = PromptBuilder.system(cfg.knowledgeBase, cfg.useKnowledge)
+        val systemTokens = PromptBuilder.estimateTokens(system)
 
         // Сжимаем промпт сами: история и список проверенных съедают контекст
         // быстрее всего, а таблицу результатов модель должна видеть целиком.
@@ -448,7 +454,7 @@ class LabRunner(
                 triedLimit = triedLimit,
                 historyLimit = historyLimit
             )
-            promptTokens = systemTokens + estimateTokens(user)
+            promptTokens = systemTokens + PromptBuilder.estimateTokens(user)
             if (cfg.contextTokens <= 0) break
             if (promptTokens + cfg.maxTokens <= cfg.contextTokens) break
             if (triedLimit > 8) {
@@ -475,7 +481,15 @@ class LabRunner(
             }
         }
 
-        val text = withContext(Dispatchers.IO) { client.chat(system, user, cfg.maxTokens) }
+        val text = try {
+            withContext(Dispatchers.IO) { client.chat(system, user, cfg.maxTokens) }
+        } catch (e: java.net.SocketTimeoutException) {
+            throw IllegalStateException(
+                "таймаут LLM: модель не ответила за ${cfg.llmTimeoutSec} с. " +
+                    "Увеличь «Ответ LLM, с» или уменьши «Ответ, токенов»/«Контекст».",
+                e
+            )
+        }
         var analysis = PromptBuilder.parseAnalysis(text)
         if (!analysis.hasPayload()) {
             // Небольшие модели иногда отвечают прозой или ломают JSON — один повтор.
@@ -500,13 +514,6 @@ class LabRunner(
             while (history.size > 8) history.removeAt(0)
         }
         return analysis
-    }
-
-    /** Грубая оценка токенов: латиница ~3.5 символа/токен, кириллица ~1.8. */
-    private fun estimateTokens(text: String): Int {
-        var cost = 0.0
-        for (ch in text) cost += if (ch.code < 0x80) 0.28 else 0.55
-        return cost.toInt()
     }
 
     private fun LlmAnalysis.hasPayload(): Boolean =

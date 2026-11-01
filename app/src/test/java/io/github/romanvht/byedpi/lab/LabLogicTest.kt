@@ -95,6 +95,49 @@ class LabLogicTest {
     }
 
     @Test
+    fun `system prompt is self contained and keeps json schema`() {
+        val system = PromptBuilder.system()
+        assertTrue(system.contains("pos_t"))
+        assertTrue(system.contains("next_strategies"))
+        assertTrue(system.contains("arg_findings"))
+        assertTrue(system.contains("Запрещено"))
+        assertFalse(system.contains("Практика (Android"))
+    }
+
+    @Test
+    fun `knowledge base is optional and goes to system only`() {
+        val kb = "Моя сеть: провайдер X, IPv6 сломан"
+        val withKb = PromptBuilder.system(kb, useKnowledge = true)
+        assertTrue(withKb.contains(kb))
+        assertFalse(PromptBuilder.system(kb, useKnowledge = false).contains(kb))
+
+        val run = LabRun(
+            id = "test-kb",
+            created = "2026-01-01 00:00:00",
+            sites = listOf("a.com"),
+            repeats = 1,
+            baseline = StrategyResult(strategy = "", perSite = linkedMapOf("a.com" to SiteStat(0, 1))),
+            results = emptyList()
+        )
+        val user = PromptBuilder.user(
+            run = run,
+            history = emptyList(),
+            bestStrategy = "",
+            bestScore = 0.0,
+            tried = emptyList()
+        )
+        assertFalse(user.contains(kb))
+        assertFalse(user.contains("arg_findings"))
+        assertTrue(user.endsWith("/no_think"))
+    }
+
+    @Test
+    fun `token estimate is sane`() {
+        assertTrue(PromptBuilder.estimateTokens("hello") in 1..10)
+        assertTrue(PromptBuilder.estimateTokens("привет") in 1..10)
+    }
+
+    @Test
     fun `base url is normalized`() {
         assertEquals(
             "http://127.0.0.1:1234/v1",

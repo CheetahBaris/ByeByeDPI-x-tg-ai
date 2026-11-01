@@ -1,8 +1,13 @@
 package io.github.romanvht.byedpi.lab
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
+import android.text.InputType
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.AdapterView
@@ -18,6 +23,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.edit
+import androidx.core.widget.doAfterTextChanged
 import androidx.preference.PreferenceManager
 import com.google.android.material.appbar.MaterialToolbar
 import io.github.romanvht.byedpi.R
@@ -26,6 +32,7 @@ import io.github.romanvht.byedpi.data.AppStatus
 import io.github.romanvht.byedpi.services.ServiceManager
 import io.github.romanvht.byedpi.services.appStatus
 import io.github.romanvht.byedpi.utility.HistoryUtils
+import io.github.romanvht.byedpi.utility.PermissionUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,9 +71,17 @@ class LabActivity : BaseActivity() {
     private lateinit var concurrency: EditText
     private lateinit var maxTokens: EditText
     private lateinit var contextTokens: EditText
+    private lateinit var llmTimeout: EditText
     private lateinit var autoApply: CheckBox
     private lateinit var reuseBaseline: CheckBox
-    private lateinit var fullKb: CheckBox
+    private lateinit var useKnowledge: CheckBox
+    private lateinit var knowledgeBase: EditText
+    private lateinit var promptBudget: TextView
+    private lateinit var sitesExpandBtn: Button
+    private lateinit var strategiesExpandBtn: Button
+    private lateinit var kbExpandBtn: Button
+    private lateinit var logExpandBtn: Button
+    private lateinit var kbResetBtn: Button
 
     // Сеть
     private lateinit var scanModeSpinner: Spinner
@@ -104,6 +119,20 @@ class LabActivity : BaseActivity() {
     }
 
     private var presets: List<Pair<String, String>> = emptyList()
+
+    // Состояние для уведомления и бюджет промпта
+    private var startedAt = 0L
+    private var lastCfg: LabConfig? = null
+    private var lastBestStrategy = ""
+    private var lastBestScore = 0.0
+    private var budgetColor = 0
+    private val basePromptTokens by lazy {
+        PromptBuilder.estimateTokens(PromptBuilder.system())
+    }
+
+    companion object {
+        private const val REQUEST_NOTIFICATIONS = 1201
+    }
 
     private val scanOptions = listOf(
         ScanMode.LOCAL to "Локально (адрес из поля)",
@@ -147,6 +176,20 @@ class LabActivity : BaseActivity() {
         loadPrefs()
         refreshBest()
         wireActions()
+        updatePromptBudget()
+        LabNotifications.ensureChannel(applicationContext)
+
+        if (intent?.action == LabNotifications.ACTION_STOP && job?.isActive == true) {
+            stop()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == LabNotifications.ACTION_STOP && job?.isActive == true) {
+            stop()
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -185,13 +228,22 @@ class LabActivity : BaseActivity() {
         concurrency = findViewById(R.id.labConcurrency)
         maxTokens = findViewById(R.id.labMaxTokens)
         contextTokens = findViewById(R.id.labContextTokens)
+        llmTimeout = findViewById(R.id.labLlmTimeout)
         autoApply = findViewById(R.id.labAutoApply)
         reuseBaseline = findViewById(R.id.labReuseBaseline)
-        fullKb = findViewById(R.id.labFullKb)
+
+        useKnowledge = findViewById(R.id.labUseKb)
+        knowledgeBase = findViewById(R.id.labKb)
+        promptBudget = findViewById(R.id.labPromptBudget)
+        kbExpandBtn = findViewById(R.id.labKbExpandBtn)
+        kbResetBtn = findViewById(R.id.labKbResetBtn)
 
         presetSpinner = findViewById(R.id.labPreset)
         sites = findViewById(R.id.labSites)
         strategies = findViewById(R.id.labStrategies)
+        sitesExpandBtn = findViewById(R.id.labSitesExpandBtn)
+        strategiesExpandBtn = findViewById(R.id.labStrategiesExpandBtn)
+        logExpandBtn = findViewById(R.id.labLogExpandBtn)
 
         startBtn = findViewById(R.id.labStartBtn)
         stopBtn = findViewById(R.id.labStopBtn)
@@ -214,6 +266,27 @@ class LabActivity : BaseActivity() {
         findViewById<Button>(R.id.labTopBtn).setOnClickListener { showTop() }
         findViewById<Button>(R.id.labReportBtn).setOnClickListener { showReport() }
         findViewById<Button>(R.id.labClearBtn).setOnClickListener { logView.text = "" }
+
+        sitesExpandBtn.setOnClickListener {
+            showFullscreenEditor(getString(R.string.lab_sites_title), sites)
+        }
+        strategiesExpandBtn.setOnClickListener {
+            showFullscreenEditor(getString(R.string.lab_strategies_title), strategies)
+        }
+        kbExpandBtn.setOnClickListener {
+            showFullscreenEditor(getString(R.string.lab_kb_title), knowledgeBase)
+        }
+        kbResetBtn.setOnClickListener {
+            knowledgeBase.setText(PromptBuilder.defaultKnowledge())
+            updatePromptBudget()
+        }
+        logExpandBtn.setOnClickListener {
+            showFullscreenText(getString(R.string.lab_log_title), logView.text.toString())
+        }
+        useKnowledge.setOnCheckedChangeListener { _, _ -> updatePromptBudget() }
+        knowledgeBase.doAfterTextChanged { updatePromptBudget() }
+        maxTokens.doAfterTextChanged { updatePromptBudget() }
+        contextTokens.doAfterTextChanged { updatePromptBudget() }
 
         testNetSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
@@ -315,10 +388,12 @@ class LabActivity : BaseActivity() {
             maxCandidates = number(candidates, 10, 2, 30),
             maxTokens = number(maxTokens, 1200, 200, 8000),
             contextTokens = number(contextTokens, 8192, 0, 131072),
+            llmTimeoutSec = number(llmTimeout, 300, 10, 1800),
+            knowledgeBase = if (useKnowledge.isChecked) knowledgeBase.text.toString() else "",
+            useKnowledge = useKnowledge.isChecked,
             reuseBaseline = reuseBaseline.isChecked,
             autoApply = autoApply.isChecked,
             concurrency = number(concurrency, 8, 1, 32),
-            fullKb = fullKb.isChecked,
             llmNetwork = selected(llmNetSpinner, llmOptions, NetTarget.AUTO),
             testNetwork = selected(testNetSpinner, testOptions, NetTarget.SYSTEM),
             scanMode = selected(scanModeSpinner, scanOptions, ScanMode.BOTH),
@@ -327,7 +402,17 @@ class LabActivity : BaseActivity() {
 
         savePrefs()
         logView.text = ""
+        lastCfg = cfg
+        startedAt = System.currentTimeMillis()
+        lastBestStrategy = ""
+        lastBestScore = 0.0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !PermissionUtils.hasNotificationPermission(this)
+        ) {
+            PermissionUtils.requestNotificationPermission(this, REQUEST_NOTIFICATIONS)
+        }
         setRunning(true)
+        notifyLab("Запуск подбора…", null, true)
         job = scope.launch {
             try {
                 val result = LabRunner(
@@ -341,9 +426,11 @@ class LabActivity : BaseActivity() {
             } catch (e: CancellationException) {
                 appendLog("— остановлено пользователем —")
                 status.text = "Остановлено"
+                notifyLab("Остановлено пользователем", null, false, ongoing = false)
             } catch (e: Exception) {
                 appendLog("ОШИБКА: ${e.message}")
                 status.text = "Ошибка: ${e.message?.take(70)}"
+                notifyLab("Ошибка: ${e.message?.take(80)}", null, false, ongoing = false)
             } finally {
                 setRunning(false)
                 refreshBest()
@@ -356,11 +443,15 @@ class LabActivity : BaseActivity() {
         job = null
         status.text = "Останавливаю…"
         appendLog("— запрошена остановка —")
+        notifyLab("Останавливаю…", null, true)
     }
 
     private fun onFinished(result: LabResult) {
         progressBar.progress = 100
+        lastBestStrategy = result.bestStrategy
+        lastBestScore = result.bestScore
         status.text = "Готово: ${pct(result.bestScore)} • ${result.rounds} раунд(ов)"
+        notifyLab("Готово: ${pct(result.bestScore)}", 100, false, ongoing = false)
         if (result.bestStrategy.isNotBlank()) {
             bestView.text = "Лучшая: ${pct(result.bestScore)} • ${result.bestStrategy}"
             AlertDialog.Builder(this)
@@ -535,10 +626,11 @@ class LabActivity : BaseActivity() {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     LlmClient(
-                        url,
-                        currentModel(),
-                        apiKey.text.toString().trim(),
-                        network = network
+                        baseUrl = url,
+                        model = currentModel(),
+                        apiKey = apiKey.text.toString().trim(),
+                        network = network,
+                        readTimeoutMs = number(llmTimeout, 300, 10, 1800) * 1000
                     ).listModels()
                 }
             }
@@ -661,26 +753,171 @@ class LabActivity : BaseActivity() {
 
     private fun onProgress(p: LabProgress) {
         runOnUiThread {
+            if (p.bestStrategy.isNotBlank()) {
+                lastBestStrategy = p.bestStrategy
+                lastBestScore = p.bestScore
+            }
             when (p.phase) {
                 "baseline" -> {
                     progressBar.progress = 0
                     status.text = "Раунд ${p.round}: измеряю baseline…"
+                    notifyLab("Раунд ${p.round}: baseline…", null, true)
                 }
                 "probe" -> {
-                    progressBar.progress = if (p.total > 0) p.index * 100 / p.total else 0
+                    val value = if (p.total > 0) p.index * 100 / p.total else 0
+                    progressBar.progress = value
                     status.text = "Раунд ${p.round} • ${p.index}/${p.total} • ${pct(p.bestScore)}"
+                    notifyLab(
+                        "Раунд ${p.round} • ${p.index}/${p.total} • ${pct(p.bestScore)}",
+                        value,
+                        false
+                    )
                 }
-                "analyze" -> status.text = "Раунд ${p.round}: анализ LLM…"
-                "validate" -> status.text = "Финальная проверка лучшей стратегии…"
+                "analyze" -> {
+                    status.text = "Раунд ${p.round}: анализ LLM…"
+                    notifyLab("Раунд ${p.round}: анализ LLM…", null, true)
+                }
+                "validate" -> {
+                    status.text = "Финальная проверка лучшей стратегии…"
+                    notifyLab("Финальная проверка лучшей стратегии…", null, true)
+                }
                 "done" -> {
                     progressBar.progress = 100
                     status.text = "Готово: ${pct(p.bestScore)}"
+                    notifyLab("Готово: ${pct(p.bestScore)}", 100, false)
                 }
             }
             if (p.bestStrategy.isNotBlank()) {
                 bestView.text = "Лучшая: ${pct(p.bestScore)} • ${p.bestStrategy}"
             }
         }
+    }
+
+    private fun notifyLab(
+        state: String,
+        percent: Int?,
+        indeterminate: Boolean,
+        ongoing: Boolean = true
+    ) {
+        runCatching {
+            val cfg = lastCfg
+            val elapsedSec = if (startedAt > 0) {
+                ((System.currentTimeMillis() - startedAt) / 1000).coerceAtLeast(0)
+            } else {
+                0
+            }
+            val best = if (lastBestStrategy.isBlank()) {
+                "—"
+            } else {
+                "${pct(lastBestScore)} · $lastBestStrategy"
+            }
+            val big = buildString {
+                append(state)
+                if (cfg != null) {
+                    append("\nСайтов: ").append(cfg.sites.size)
+                    append(" · повторов: ").append(cfg.repeats)
+                    append(" · раундов: ").append(cfg.rounds)
+                }
+                append("\nЛучшая: ").append(best)
+                append("\nПрошло: ").append(elapsedSec / 60).append(" мин ")
+                    .append(elapsedSec % 60).append(" с")
+                if (!ongoing) append("\nНажми, чтобы открыть лабораторию.")
+            }
+            LabNotifications.update(
+                context = applicationContext,
+                title = getString(
+                    if (ongoing) R.string.lab_notif_title else R.string.lab_notif_done_title
+                ),
+                text = state,
+                bigText = big,
+                percent = percent,
+                indeterminate = indeterminate,
+                ongoing = ongoing
+            )
+        }
+    }
+
+    private fun updatePromptBudget() {
+        if (!::promptBudget.isInitialized) return
+        if (budgetColor == 0) budgetColor = promptBudget.currentTextColor
+        val useKb = useKnowledge.isChecked
+        val kb = if (useKb) knowledgeBase.text.toString().trim() else ""
+        val kbTokens = if (kb.isEmpty()) 0 else PromptBuilder.estimateTokens(kb)
+        val systemTokens = basePromptTokens + kbTokens
+        val answer = number(maxTokens, 1200, 200, 8000)
+        val context = number(contextTokens, 8192, 0, 131072)
+        promptBudget.text = getString(
+            R.string.lab_prompt_budget,
+            systemTokens,
+            basePromptTokens,
+            kbTokens,
+            answer,
+            context
+        )
+        promptBudget.setTextColor(
+            if (context > 0 && systemTokens + answer > context) {
+                0xFFD32F2F.toInt()
+            } else {
+                budgetColor
+            }
+        )
+    }
+
+    /** Полноэкранный редактор для длинных полей: удобно на маленьком экране. */
+    private fun showFullscreenEditor(title: String, source: EditText) {
+        val input = EditText(this).apply {
+            setText(source.text)
+            gravity = Gravity.TOP or Gravity.START
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            typeface = Typeface.MONOSPACE
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setScrollbarFadingEnabled(false)
+            isVerticalScrollBarEnabled = true
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton(R.string.lab_done_btn) { _, _ ->
+                source.setText(input.text)
+                updatePromptBudget()
+            }
+            .setNegativeButton(R.string.lab_cancel_btn, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
+            input.requestFocus()
+        }
+        dialog.show()
+    }
+
+    /** Полноэкранный просмотр длинного текста (журнал). */
+    private fun showFullscreenText(title: String, text: String) {
+        val body = TextView(this).apply {
+            this.text = text.ifBlank { "—" }
+            typeface = Typeface.MONOSPACE
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setTextIsSelectable(true)
+        }
+        val scroll = ScrollView(this).apply { addView(body) }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(scroll)
+            .setPositiveButton(R.string.lab_close_btn, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
+        }
+        dialog.show()
     }
 
     private fun appendLog(line: String) {
@@ -711,9 +948,13 @@ class LabActivity : BaseActivity() {
         concurrency.setText(prefs.getString("concurrency", "8"))
         maxTokens.setText(prefs.getString("max_tokens", "1200"))
         contextTokens.setText(prefs.getString("context_tokens", "8192"))
+        llmTimeout.setText(prefs.getString("llm_timeout", "300"))
         autoApply.isChecked = prefs.getBoolean("auto_apply", true)
         reuseBaseline.isChecked = prefs.getBoolean("reuse_baseline", true)
-        fullKb.isChecked = prefs.getBoolean("full_kb", false)
+        useKnowledge.isChecked = prefs.getBoolean("use_knowledge", true)
+        knowledgeBase.setText(
+            prefs.getString("knowledge_base", null) ?: PromptBuilder.defaultKnowledge()
+        )
 
         select(
             scanModeSpinner, scanOptions,
@@ -750,9 +991,11 @@ class LabActivity : BaseActivity() {
             putString("concurrency", concurrency.text.toString().trim())
             putString("max_tokens", maxTokens.text.toString().trim())
             putString("context_tokens", contextTokens.text.toString().trim())
+            putString("llm_timeout", llmTimeout.text.toString().trim())
             putBoolean("auto_apply", autoApply.isChecked)
             putBoolean("reuse_baseline", reuseBaseline.isChecked)
-            putBoolean("full_kb", fullKb.isChecked)
+            putBoolean("use_knowledge", useKnowledge.isChecked)
+            putString("knowledge_base", knowledgeBase.text.toString())
             putString("scan_mode", selected(scanModeSpinner, scanOptions, ScanMode.BOTH).name)
             putString("llm_net", selected(llmNetSpinner, llmOptions, NetTarget.AUTO).name)
             putString("test_net", selected(testNetSpinner, testOptions, NetTarget.SYSTEM).name)
@@ -875,6 +1118,7 @@ class LabActivity : BaseActivity() {
     override fun onDestroy() {
         job?.cancel()
         scope.cancel()
+        LabNotifications.cancel(this)
         super.onDestroy()
     }
 }

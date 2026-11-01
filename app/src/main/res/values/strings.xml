@@ -344,9 +344,10 @@
     <string name="lab_concurrency">Параллельно</string>
     <string name="lab_max_tokens">Ответ, токенов</string>
     <string name="lab_context_tokens">Контекст</string>
+    <string name="lab_llm_timeout">Ответ LLM, с</string>
+    <string name="lab_llm_timeout_hint">Сколько ждать ответ модели. Локальной модели на телефоне может понадобиться 300–900 с.</string>
     <string name="lab_auto_apply">Автоматически применять лучшую стратегию</string>
     <string name="lab_reuse_baseline">Переиспользовать baseline между раундами</string>
-    <string name="lab_full_kb">Полная база знаний (нужен контекст 16k+)</string>
     <string name="lab_params_hint">Перед запуском отключи основной VPN/Proxy приложения: лаборатория поднимает отдельный движок на порту 1081. Сеть для тестов выбирается в блоке «Сеть» выше.</string>
 
     <string name="lab_sites_title">Сайты для проверки</string>
@@ -355,6 +356,22 @@
 
     <string name="lab_strategies_title">Стартовые стратегии</string>
     <string name="lab_strategies_hint">Синтаксис ciadpi. Победитель на МегаФоне/LTE: -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1. Не используй -d 1 — валидатор его отклонит.</string>
+
+    <string name="lab_kb_title">База знаний для LLM</string>
+    <string name="lab_kb_use">Отправлять базу знаний в системном промпте</string>
+    <string name="lab_kb_hint">Этот текст добавляется в системное сообщение. Синтаксис, диагностика и схема JSON уже есть в промпте — здесь только наблюдения о твоей сети. Если поле пустое или галочка снята, база не отправляется.</string>
+    <string name="lab_prompt_budget">Промпт: ~%1$d токенов (правила ~%2$d + база ~%3$d) · ответ ≤%4$d · контекст %5$d. Данные раунда добавятся сверху.</string>
+    <string name="lab_expand_btn">Развернуть</string>
+    <string name="lab_reset_btn">Сбросить</string>
+    <string name="lab_done_btn">Готово</string>
+    <string name="lab_cancel_btn">Отмена</string>
+    <string name="lab_close_btn">Закрыть</string>
+
+    <string name="lab_notif_channel">AI-подбор стратегий</string>
+    <string name="lab_notif_channel_desc">Ход подбора, раунд и лучшая стратегия</string>
+    <string name="lab_notif_title">AI-подбор идёт</string>
+    <string name="lab_notif_done_title">AI-подбор завершён</string>
+    <string name="lab_notif_stop">Остановить</string>
 
     <string name="lab_log_title">Журнал</string>
     <string name="lab_start_btn">Старт</string>

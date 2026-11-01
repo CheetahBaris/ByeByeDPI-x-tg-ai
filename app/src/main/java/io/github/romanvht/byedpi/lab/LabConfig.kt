@@ -22,10 +22,14 @@ data class LabConfig(
     val maxTokens: Int = 1200,
     /** Контекст модели в токенах: для проверки бюджета промпта. 0 — не проверять. */
     val contextTokens: Int = 8192,
+    /** Сколько ждать ответ LLM, секунд. Локальные модели на телефоне могут думать долго. */
+    val llmTimeoutSec: Int = 300,
+    /** Редактируемая база знаний; добавляется в системный промпт. */
+    val knowledgeBase: String = "",
+    val useKnowledge: Boolean = true,
     val reuseBaseline: Boolean = true,
     val autoApply: Boolean = false,
     val concurrency: Int = 8,
-    val fullKb: Boolean = false,
     /** Через какую сеть ходить к LLM (Wi-Fi, кабель/loopback, мобильная...). */
     val llmNetwork: NetTarget = NetTarget.AUTO,
     /** Через какую сеть проверять сайты. */

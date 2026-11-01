@@ -492,6 +492,22 @@
                                 </com.google.android.material.textfield.TextInputLayout>
                             </LinearLayout>
 
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:hint="@string/lab_llm_timeout"
+                                app:helperText="@string/lab_llm_timeout_hint">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/labLlmTimeout"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="number"
+                                    android:maxLines="1" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
                             <com.google.android.material.checkbox.MaterialCheckBox
                                 android:id="@+id/labAutoApply"
                                 android:layout_width="match_parent"
@@ -507,13 +523,6 @@
                                 android:layout_height="wrap_content"
                                 android:checked="true"
                                 android:text="@string/lab_reuse_baseline"
-                                android:textSize="12sp" />
-
-                            <com.google.android.material.checkbox.MaterialCheckBox
-                                android:id="@+id/labFullKb"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="@string/lab_full_kb"
                                 android:textSize="12sp" />
 
                             <TextView
@@ -541,13 +550,32 @@
                             android:orientation="vertical"
                             android:padding="14dp">
 
-                            <TextView
+                            <LinearLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="@string/lab_sites_title"
-                                android:textColor="?android:textColorPrimary"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_sites_title"
+                                    android:textColor="?android:textColorPrimary"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/labSitesExpandBtn"
+                                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="40dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:text="@string/lab_expand_btn"
+                                    android:textAllCaps="false"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
 
                             <LinearLayout
                                 android:layout_width="match_parent"
@@ -583,11 +611,13 @@
                                 <com.google.android.material.textfield.TextInputEditText
                                     android:id="@+id/labSites"
                                     android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
+                                    android:layout_height="160dp"
+                                    android:fadeScrollbars="false"
                                     android:gravity="top|start"
-                                    android:inputType="textMultiLine"
-                                    android:maxLines="10"
-                                    android:minLines="5"
+                                    android:inputType="textMultiLine|textNoSuggestions"
+                                    android:nestedScrollingEnabled="true"
+                                    android:overScrollMode="always"
+                                    android:scrollbarStyle="insideInset"
                                     android:scrollbars="vertical"
                                     android:textSize="12sp"
                                     android:typeface="monospace" />
@@ -618,13 +648,32 @@
                             android:orientation="vertical"
                             android:padding="14dp">
 
-                            <TextView
+                            <LinearLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="@string/lab_strategies_title"
-                                android:textColor="?android:textColorPrimary"
-                                android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_strategies_title"
+                                    android:textColor="?android:textColorPrimary"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/labStrategiesExpandBtn"
+                                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="40dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:text="@string/lab_expand_btn"
+                                    android:textAllCaps="false"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
 
                             <com.google.android.material.textfield.TextInputLayout
                                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
@@ -635,11 +684,13 @@
                                 <com.google.android.material.textfield.TextInputEditText
                                     android:id="@+id/labStrategies"
                                     android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
+                                    android:layout_height="120dp"
+                                    android:fadeScrollbars="false"
                                     android:gravity="top|start"
-                                    android:inputType="textMultiLine"
-                                    android:maxLines="8"
-                                    android:minLines="3"
+                                    android:inputType="textMultiLine|textNoSuggestions"
+                                    android:nestedScrollingEnabled="true"
+                                    android:overScrollMode="always"
+                                    android:scrollbarStyle="insideInset"
                                     android:scrollbars="vertical"
                                     android:textSize="11sp"
                                     android:typeface="monospace" />
@@ -655,16 +706,134 @@
                                 android:textSize="11sp" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
+
+                    <!-- База знаний для системного промпта -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeWidth="0dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_kb_title"
+                                    android:textColor="?android:textColorPrimary"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/labKbResetBtn"
+                                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="40dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:text="@string/lab_reset_btn"
+                                    android:textAllCaps="false"
+                                    android:textSize="11sp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/labKbExpandBtn"
+                                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="40dp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:text="@string/lab_expand_btn"
+                                    android:textAllCaps="false"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/labUseKb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="@string/lab_kb_use"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/labKb"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="200dp"
+                                    android:fadeScrollbars="false"
+                                    android:gravity="top|start"
+                                    android:inputType="textMultiLine|textNoSuggestions"
+                                    android:nestedScrollingEnabled="true"
+                                    android:overScrollMode="always"
+                                    android:scrollbarStyle="insideInset"
+                                    android:scrollbars="vertical"
+                                    android:textSize="12sp"
+                                    android:typeface="monospace" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <TextView
+                                android:id="@+id/labPromptBudget"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:textColor="?android:textColorSecondary"
+                                android:textSize="11sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:alpha="0.7"
+                                android:text="@string/lab_kb_hint"
+                                android:textColor="?android:textColorSecondary"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
 
-                <TextView
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="@string/lab_log_title"
-                    android:textColor="?android:textColorPrimary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/lab_log_title"
+                        android:textColor="?android:textColorPrimary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/labLogExpandBtn"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="@string/lab_expand_btn"
+                        android:textAllCaps="false"
+                        android:textSize="11sp" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/labLog"

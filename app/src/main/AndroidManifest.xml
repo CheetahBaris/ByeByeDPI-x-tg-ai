@@ -104,6 +104,7 @@
             android:name=".lab.LabActivity"
             android:label="@string/ai_lab"
             android:exported="false"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize" />
 
