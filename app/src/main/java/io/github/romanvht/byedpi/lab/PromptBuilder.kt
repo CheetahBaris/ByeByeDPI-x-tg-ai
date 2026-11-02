@@ -5,16 +5,16 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
 /**
- * Промпты и разбор ответа модели.
+ * Prompts and model response parsing.
  *
- * Всё, что не зависит от раунда (роль, синтаксис ciadpi, диагностика, схема JSON),
- * живёт в системном сообщении. Пользовательская база знаний добавляется туда же
- * и не дублируется в запросе. Пользовательское сообщение содержит только данные
- * текущего раунда — так маленькие модели не тратят контекст на повторение правил.
+ * Everything that does not depend on the round (role, ciadpi syntax, diagnostics, JSON schema)
+ * lives in the system message. The user knowledge base is added there as well
+ * and is not duplicated in the request. The user message contains only data
+ * for the current round — this way small models don't waste context repeating rules.
  */
 object PromptBuilder {
 
-    /** База знаний по умолчанию: её можно редактировать на экране лаборатории. */
+    /** Default knowledge base: can be edited on the lab screen. */
     fun defaultKnowledge(): String = DEFAULT_KB.trim()
 
     fun system(knowledgeBase: String = "", useKnowledge: Boolean = false): String {
@@ -22,7 +22,7 @@ object PromptBuilder {
         return buildString {
             append(CORE.trim())
             if (useKnowledge && kb.isNotEmpty()) {
-                append("\n\n=== БАЗА ЗНАНИЙ (редактируемая) ===\n")
+                append("\n\n=== KNOWLEDGE BASE (editable) ===\n")
                 append(kb)
             }
             append("\n\n")
@@ -44,27 +44,28 @@ object PromptBuilder {
         val sites = run.sites
         val sb = StringBuilder()
 
-        sb.append("## Раунд ").append(run.id).append('\n')
-        sb.append("- повторов на сайт: ").append(run.repeats).append('\n')
-        sb.append("- baseline (без обхода): ")
-            .append(run.baseline?.let { "${it.ok}/${it.total}" } ?: "н/д")
+        sb.append("## Round ").append(run.id).append('\n')
+        sb.append("- repeats per site: ").append(run.repeats).append('\n')
+        sb.append("- baseline (no bypass): ")
+            .append(run.baseline?.let { "${it.ok}/${it.total}" } ?: "n/a")
             .append('\n')
-        sb.append("- лучшая за всё время: ")
-            .append(if (bestStrategy.isBlank()) "пока нет" else "`$bestStrategy` (${pct(bestScore)})")
+        sb.append("- best ever: ")
+            .append(if (bestStrategy.isBlank()) "none yet" else "`$bestStrategy` (${pct(bestScore)})")
             .append('\n')
-        if (!run.network.isNullOrBlank()) sb.append("- сеть: ").append(run.network).append('\n')
+        if (!run.network.isNullOrBlank()) sb.append("- network: ").append(run.network).append('\n')
 
-        // Компактный формат: полные имена сайтов один раз, в строках — только цифры.
-        // Экономит ~2/3 объёма таблицы, что критично для локальных 4B-моделей.
-        sb.append("\n## Сайты (номер = колонка в результатах)\n")
+        // Compact format: full site names once, then only numbers in rows.
+        // Saves ~2/3 of table volume, critical for local 4B models.
+        sb.append("\n## Sites (number = column in results)\n")
         sites.forEachIndexed { i, s ->
             sb.append(i + 1).append('=').append(short(s))
                 .append(if (i == sites.lastIndex) '\n' else ' ')
         }
 
-        sb.append("\n## Результаты раунда\n")
-        sb.append("Формат строки: Σ `стратегия` | цифры по сайтам 1..N. Цифра = сколько из ")
-            .append(run.repeats).append(" повторов прошло (2 2 0 = сайт 1: 2/2, сайт 2: 2/2, сайт 3: 0/2).\n")
+        sb.append("\n## Round results\n")
+        sb.append("Line format: Σ `strategy` | digits for sites 1..N. Digit = how many out of ")
+            .append(run.repeats)
+            .append(" repeats succeeded (2 2 0 = site 1: 2/2, site 2: 2/2, site 3: 0/2).\n")
         run.results.sortedByDescending { it.score }.forEach { r ->
             sb.append(r.ok).append('/').append(r.total).append(' ')
                 .append('`').append(r.strategy.ifBlank { "<baseline>" }).append("` |")
@@ -79,8 +80,8 @@ object PromptBuilder {
             run.results.all { (it.perSite[s]?.ok ?: 0) == 0 }
         }
         if (dead.isNotEmpty()) {
-            sb.append("\nМёртвые сайты (0 у всех стратегий — вероятно IP/DNS-блок, ")
-                .append("их провалы не про аргументы): ")
+            sb.append("\nDead sites (0 for all strategies — likely IP/DNS block, ")
+                .append("their failures are not about args): ")
                 .append(dead.joinToString(", ") { "${it.index + 1}=${short(it.value)}" })
                 .append('\n')
         }
@@ -89,13 +90,13 @@ object PromptBuilder {
             .maxByOrNull { it.score }
         if (bestRow != null && bestRow.strategy.isNotBlank()) {
             val base = run.baseline?.score ?: 0.0
-            sb.append("\nЛучшая стратегия раунда: `").append(bestRow.strategy)
+            sb.append("\nBest strategy of the round: `").append(bestRow.strategy)
                 .append("` — ").append(bestRow.ok).append('/').append(bestRow.total)
-                .append(", ").append(pct(bestRow.score - base)).append(" к baseline\n")
+                .append(", ").append(pct(bestRow.score - base)).append(" vs baseline\n")
         }
 
         if (history.isNotEmpty()) {
-            sb.append("\n## История прошлых раундов\n")
+            sb.append("\n## History of previous rounds\n")
             history.takeLast(historyLimit.coerceAtLeast(1)).forEach {
                 sb.append("- ").append(it.take(140)).append('\n')
             }
@@ -104,22 +105,22 @@ object PromptBuilder {
         if (tried.isNotEmpty()) {
             val all = tried.toList()
             val shown = all.takeLast(triedLimit.coerceAtLeast(1))
-            sb.append("\n## Уже проверенные стратегии (НЕ повторяй)\n")
+            sb.append("\n## Already tested strategies (DO NOT repeat)\n")
             if (all.size > shown.size) {
-                sb.append("(ещё ").append(all.size - shown.size)
-                    .append(" проверено раньше — их тоже не повторяй)\n")
+                sb.append("(").append(all.size - shown.size)
+                    .append(" more tested earlier — do not repeat them either)\n")
             }
             shown.forEach { sb.append("- `").append(it).append("`\n") }
         }
 
-        sb.append("\n## Задача\n")
-        sb.append("Предложи до ").append(maxCandidates)
-            .append(" стратегий: большинство — одна правка лучшей, 1–2 смелых варианта. ")
-            .append("Не повторяй проверенные. Разница меньше ")
-            .append(pct(minImprovement)).append(" — шум, не доказательство.\n")
-        sb.append("Ответь одним JSON-объектом по схеме из системного сообщения, ")
-            .append("без markdown и текста вокруг.\n")
-        // Qwen3 и совместимые модели понимают эту директиву; остальные просто игнорируют.
+        sb.append("\n## Task\n")
+        sb.append("Propose up to ").append(maxCandidates)
+            .append(" strategies: majority — one edit of the best, 1–2 bold variants. ")
+            .append("Do not repeat tested ones. Difference less than ")
+            .append(pct(minImprovement)).append(" — noise, not proof.\n")
+        sb.append("Reply with a single JSON object according to the schema in the system message, ")
+            .append("without markdown or surrounding text.\n")
+        // Qwen3 and compatible models understand this directive; others simply ignore it.
         sb.append("/no_think")
         return sb.toString()
     }
@@ -145,7 +146,8 @@ object PromptBuilder {
                     evidence = x.str("evidence")
                 )
             },
-            hypotheses = (root.array("hypotheses") ?: emptyList()).mapNotNull { it.asStringOrNull() },
+            hypotheses = (root.array("hypotheses")
+                ?: emptyList()).mapNotNull { it.asStringOrNull() },
             next = (nextArray ?: emptyList()).mapNotNull { item ->
                 when {
                     item.isJsonObject -> {
@@ -153,6 +155,7 @@ object PromptBuilder {
                         val args = x.str("args").ifBlank { x.str("strategy") }
                         if (args.isBlank()) null else Candidate(args, x.str("why"))
                     }
+
                     item.isJsonPrimitive -> Candidate(item.asString, "")
                     else -> null
                 }
@@ -162,7 +165,7 @@ object PromptBuilder {
         )
     }
 
-    /** Грубая оценка токенов: латиница ~0.28 токена/символ, кириллица ~0.55. */
+    /** Rough token estimate: Latin ~0.28 token/char, Cyrillic ~0.55. */
     fun estimateTokens(text: String): Int {
         var cost = 0.0
         for (ch in text) cost += if (ch.code < 0x80) 0.28 else 0.55
@@ -203,129 +206,129 @@ object PromptBuilder {
     private fun JsonElement.asStringOrNull(): String? =
         if (isJsonPrimitive) asString else null
 
-    // ---------------------------------------------------------------- тексты
+    // ---------------------------------------------------------------- texts
 
     private val CORE = """
-Ты — инженер по обходу DPI (ciadpi, ByeByeDPI 1.8.2 / byedpi 17.x, Android).
-По таблице прогонов определи, как DPI обрабатывает TLS/HTTP, и предложи следующие
-стратегии. Ты видишь только числа, не трафик и не логи. Не выдумывай факты.
+You are a DPI bypass engineer (ciadpi, ByeByeDPI 1.8.2 / byedpi 17.x, Android).
+Using the run table, determine how DPI handles TLS/HTTP and propose next
+strategies. You only see numbers, not traffic or logs. Do not invent facts.
 
-=== ВХОД ===
-- «повторов на сайт: R» — число проверок каждого сайта.
-- «Сайты»: 1=youtube.com 2=... — номера колонок.
-- Строка `ok/total стратегия | 2 1 0`: цифра = успехов из R на сайте с этим номером,
-  `?` = нет данных.
-- `<baseline>` — без обхода; сравнивай с ним, не с нулём.
-- «Лучшая…» — родитель новых кандидатов; «мёртвые» сайты (0 у всех) — IP/DNS-блок,
-  их не лечат аргументами; «проверенные» — не повторяй.
+=== INPUT ===
+- "repeats per site: R" — number of checks per site.
+- "Sites": 1=youtube.com 2=... — column numbers.
+- Line `ok/total strategy | 2 1 0`: digit = successes out of R on the site with that number,
+  `?` = no data.
+- `<baseline>` — no bypass; compare against it, not zero.
+- "Best..." — parent of new candidates; "dead" sites (0 for all) — IP/DNS block,
+  they are not fixed by args; "tested" — do not repeat.
 
-=== СИНТАКСИС ===
+=== SYNTAX ===
 pos_t = offset[:repeats:skip][+s|+h|+n][e|m|r]
-- offset — байты от начала запроса, отрицательный — от конца.
-- :repeats:skip — серия разрезов: 1:3:5 = позиции 1, 6, 11.
-- +s — от SNI (TLS), +h — от Host (HTTP), +n — без привязки; затем +e (конец имени),
-  +m (середина), +r (случайно в имени).
-- Примеры: -s1+s, -d3+s, -o2, -r-5+se, -f-1 -t4, -s1:3:5+sm.
-- Ключи можно повторять; порядок — как в командной строке; tlsrec (-r) всегда до split.
+- offset — bytes from start of request, negative — from end.
+- :repeats:skip — series of cuts: 1:3:5 = positions 1, 6, 11.
+- +s — from SNI (TLS), +h — from Host (HTTP), +n — no anchor; then +e (end of name),
+  +m (middle), +r (random within name).
+- Examples: -s1+s, -d3+s, -o2, -r-5+se, -f-1 -t4, -s1:3:5+sm.
+- Keys can be repeated; order — as in command line; tlsrec (-r) always before split.
 
-Операции:
-- -s — разрезать и отправить по порядку.
-- -d — disorder: первая часть с TTL=1, сервер перезапрашивает, порядок ломается.
-  На мобильной сети -d 1 часто даёт 0 — не предлагай.
-- -o — OOB (URG), часть вне потока; -q — disorder + OOB.
-- -f — fake перед оригиналом; -t TTL фейка (по умолчанию 8, пробуй 3..6);
-  -O сдвиг фейка, -l ':строка' свои байты, -n 'www.?????.com' случайный SNI,
-  -Q r|o|msize=N модификация ClientHello.
-- -r — tlsrec: разрезать TLS-запись с новым 5-байтовым заголовком; обычно -r-5+se.
-- -M h,d,r — HTTP (регистр Host/домена, пробелы→табы); -m N — minor-версия TLS.
+Operations:
+- -s — split and send in order.
+- -d — disorder: first part with TTL=1, server re-requests, order breaks.
+  On mobile network -d 1 often gives 0 — do not propose.
+- -o — OOB (URG), part out of stream; -q — disorder + OOB.
+- -f — fake before original; -t TTL of fake (default 8, try 3..6);
+  -O fake shift, -l ':string' custom bytes, -n 'www.?????.com' random SNI,
+  -Q r|o|msize=N ClientHello modification.
+- -r — tlsrec: split TLS record with new 5-byte header; usually -r-5+se.
+- -M h,d,r — HTTP (Host/domain case, spaces→tabs); -m N — minor TLS version.
 
-Сеть/служба:
-- -X no-ipv6, -I IP (0.0.0.0 = только IPv4), -N no-domain, -U no-udp, -g N def-ttl,
+Network/service:
+- -X no-ipv6, -I IP (0.0.0.0 = IPv4 only), -N no-domain, -U no-udp, -g N def-ttl,
   -a N UDP-fake, -Y drop-sack, -F tfo.
-- -S md5sig на Android без root почти всегда EPERM — не предлагай.
-- -T сек timeout auto; -A t,r,s,c,n — новая группа (timeout/RST, redirect, TLS error,
-  connect error, всегда); -L s,o,n — auto-mode; группы слева направо, после сбоя
-  берётся следующая подходящая.
-- Можно: -X -I -N -U -g -s -d -o -q -f -t -O -l -n -Q -e -M -r -m -a -Y -T -A -L -R -K -H -j -V.
-- Нельзя: -i -p -D -w -E -B -C -h -v. Без порта, IP и параметров запуска. -d 1 запрещён.
+- -S md5sig on Android without root almost always EPERM — do not propose.
+- -T sec timeout auto; -A t,r,s,c,n — new group (timeout/RST, redirect, TLS error,
+  connect error, always); -L s,o,n — auto-mode; groups left to right, after failure
+  the next suitable one is taken.
+- Allowed: -X -I -N -U -g -s -d -o -q -f -t -O -l -n -Q -e -M -r -m -a -Y -T -A -L -R -K -H -j -V.
+- Forbidden: -i -p -D -w -E -B -C -h -v. No port, IP, or launch params. -d 1 forbidden.
 
-=== ДИАГНОСТИКА ===
-1. Все нули, включая baseline → стенд/сеть/порт, не стратегия. data_quality=недостаточно.
-2. baseline > 0, desync помогает на большинстве TLS → блок ClientHello/SNI.
-3. timeout без RST, HTTP мёртв → тихий дроп IP/SNI; проверь -X, IPv4, fake SNI;
-   мёртвый у всех сайт не лечи.
-4. RST/TLS-ошибка на всех TLS, HTTP жив → ClientHello; пробуй -s/-d/-o/-r, -n, -Q.
-5. Помогает только -f TTL 3..6 → фильтр по TTL, хрупко; проверяй TTL и повторы.
-6. Помогает только -r → DPI разбирает TLS-запись целиком; двигай позицию, добавь второй -r.
-7. Помогает только -o/-q → OOB; следи за мидлбоксами, комбинируй с -d.
-8. Один сайт 0 у всех → CDN/QUIC/IPv6, не провал аргументов.
-9. Разница <10–15% или 1 из 2 повторов → шум.
-10. engineError/невалидно → ошибка запуска, не измерение.
+=== DIAGNOSTICS ===
+1. All zeros, including baseline → bench/network/port, not strategy. data_quality=insufficient.
+2. baseline > 0, desync helps on most TLS → block of ClientHello/SNI.
+3. timeout without RST, HTTP dead → silent drop of IP/SNI; check -X, IPv4, fake SNI;
+   do not fix a site dead for everyone.
+4. RST/TLS error on all TLS, HTTP alive → ClientHello; try -s/-d/-o/-r, -n, -Q.
+5. Only -f TTL 3..6 helps → TTL-based filter, fragile; check TTL and repeats.
+6. Only -r helps → DPI parses TLS record entirely; move position, add second -r.
+7. Only -o/-q helps → OOB; watch middleboxes, combine with -d.
+8. One site 0 for all → CDN/QUIC/IPv6, not arg failure.
+9. Difference <10–15% or 1 of 2 repeats → noise.
+10. engineError/invalid → launch error, not measurement.
 
-=== ПОИСК ===
-- Старт — лучшая за всё время; если нет: -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1.
-- 60–70% кандидатов — одна правка лучшей: ±1..3 offset, -o1/-o2/-o3, -r-5/-6+se,
-  -s2+s, TTL 3..6, порядок split/disorder, убрать один аргумент (ablation).
-- 20–30% — другая механика: -q вместо -d, -s1:3:5, -n, -M, -m, fake+split.
-- 0–1 смелая гипотеза; ≤8–10 аргументов в строке.
-- Лучшая ≥90% → проверяй устойчивость (соседние TTL/offset, повтор, ablation).
-- Все на уровне baseline → смени механизм, не крути offset.
-- На мобильной сети добавляй -X -I 0.0.0.0, если IPv6 не доказан.
-- Не повторяй проверенные, не дублируй, не предлагай невалидное.
+=== SEARCH ===
+- Start — best ever; if none: -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1.
+- 60–70% of candidates — one edit of the best: ±1..3 offset, -o1/-o2/-o3, -r-5/-6+se,
+  -s2+s, TTL 3..6, order of split/disorder, remove one arg (ablation).
+- 20–30% — different mechanic: -q instead of -d, -s1:3:5, -n, -M, -m, fake+split.
+- 0–1 bold hypothesis; ≤8–10 args per line.
+- Best ≥90% → check stability (neighboring TTL/offset, repeat, ablation).
+- All at baseline level → change mechanic, do not tweak offset.
+- On mobile network add -X -I 0.0.0.0 if IPv6 is not proven.
+- Do not repeat tested ones, do not duplicate, do not propose invalid.
 """.trimIndent()
 
     private val OUTPUT = """
-=== ФОРМАТ ОТВЕТА ===
-Верни строго один JSON-объект:
+=== RESPONSE FORMAT ===
+Return exactly one JSON object:
 {
-  "summary": "1–2 предложения: что показал раунд",
-  "data_quality": "достаточно|мало|недостаточно: почему",
+  "summary": "1–2 sentences: what the round showed",
+  "data_quality": "sufficient|low|insufficient: why",
   "arg_findings": [
     {"arg": "-r-5+se", "effect": "positive|negative|neutral|unknown",
      "confidence": "low|medium|high",
-     "evidence": "сайты 1,3: 2 2 против 0 0 у baseline"}
+     "evidence": "sites 1,3: 2 2 vs 0 0 for baseline"}
   ],
-  "hypotheses": ["что предполагаем о работе DPI"],
+  "hypotheses": ["what we assume about DPI behavior"],
   "next_strategies": [
     {"args": "-X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1",
-     "why": "какой один параметр проверяем"}
+     "why": "which single parameter we test"}
   ],
-  "next_experiment": "один вопрос, который закроет раунд",
-  "apply_recommendation": "что применять и когда; если рано — так и скажи"
+  "next_experiment": "one question that closes the round",
+  "apply_recommendation": "what to apply and when; if too early — say so"
 }
 
-Правила ответа:
-- Все текстовые поля — по-русски, кратко.
-- evidence — только номера сайтов и цифры из запроса; не выдумывай.
-- next_strategies — 3–5 (или сколько просит запрос), только валидные аргументы,
-  без -i/-p; каждая строка уникальна.
-- Не рекомендуй применять стратегию, которая не проверена в этом запуске.
-- Никакого markdown, ```json, комментариев и лишних полей.
-- Если данных мало: data_quality="недостаточно", но next_strategies всё равно дай.
+Response rules:
+- All text fields — in Russian, concise.
+- evidence — only site numbers and figures from the request; do not invent.
+- next_strategies — 3–5 (or as many as the request asks), only valid args,
+  without -i/-p; each line unique.
+- Do not recommend applying a strategy that was not tested in this run.
+- No markdown, ```json, comments, or extra fields.
+- If data is scarce: data_quality="insufficient", but still provide next_strategies.
 """.trimIndent()
 
     /**
-     * Компактная база знаний по умолчанию.
+     * Compact default knowledge base.
      *
-     * Здесь только практические наблюдения, которые нельзя вывести из таблицы.
-     * Всё остальное (синтаксис, диагностика, схема) уже есть в системном промпте,
-     * поэтому база не дублирует правила и легко редактируется пользователем.
+     * Only practical observations that cannot be derived from the table.
+     * Everything else (syntax, diagnostics, schema) is already in the system prompt,
+     * so the base does not duplicate rules and is easy for the user to edit.
      */
     private val DEFAULT_KB = """
-Практика (Android, ciadpi 17.x):
-- На мобильной сети часто есть IPv6-адрес, но нет IPv6-маршрута: без -X -I 0.0.0.0
-  часть доменов падает с ENETUNREACH. Если baseline низкий, начинай с этих аргументов.
-- Рабочая формула на LTE (МегаФон, Xiaomi 13): -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1
-  (12/12 YouTube + Instagram). Устойчивые окрестности: -o1/-o3, -r-6+se, -s2+s,
-  добавление -f-1 -t3.
-- -d 1 на мобильном канале часто даёт 0/таймауты; вместо него -s1+s -d3+s.
-- tlsrec -r-5+se — ключевой аргумент; -r1+s и -r4+se заметно хуже.
-- -f/-q не всегда добавляют прирост к split+oob+tlsrec; проверяй отдельно.
-- -S (md5sig) на Android без root почти всегда EPERM; -E требует root. Не предлагай.
-- -Y и -F зависят от ядра: проверяй отдельным прогоном, не смешивай с рабочей формулой.
-- telegram.org и web.telegram.org часто DNS-блок; discord.com, x.com, rutracker.org,
-  speedtest.net — IP-блок. Их нули не лечатся аргументами.
-- Мобильная сеть ≠ Wi-Fi: DPI и MTU разные, результаты не переноси между сетями.
-- Адаптивный DPI: после серии неудач поведение меняется; baseline и повторы обязательны.
+Practice (Android, ciadpi 17.x):
+- On mobile networks there is often an IPv6 address but no IPv6 route: without -X -I 0.0.0.0
+  some domains fail with ENETUNREACH. If baseline is low, start with these args.
+- Working formula on LTE (MegaFon, Xiaomi 13): -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1
+  (12/12 YouTube + Instagram). Stable neighborhood: -o1/-o3, -r-6+se, -s2+s,
+  adding -f-1 -t3.
+- -d 1 on mobile channel often gives 0/timeouts; use -s1+s -d3+s instead.
+- tlsrec -r-5+se — key argument; -r1+s and -r4+se are noticeably worse.
+- -f/-q do not always add gain to split+oob+tlsrec; test separately.
+- -S (md5sig) on Android without root almost always EPERM; -E requires root. Do not propose.
+- -Y and -F depend on kernel: test in a separate run, do not mix with the working formula.
+- telegram.org and web.telegram.org are often DNS-blocked; discord.com, x.com, rutracker.org,
+  speedtest.net — IP-blocked. Their zeros are not fixed by args.
+- Mobile network ≠ Wi-Fi: DPI and MTU differ, do not transfer results between networks.
+- Adaptive DPI: behavior changes after a series of failures; baseline and repeats are mandatory.
 """.trimIndent()
 }
