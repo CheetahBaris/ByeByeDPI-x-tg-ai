@@ -57,7 +57,6 @@ class LlmClient(
                     add(message("system", system))
                     add(message("user", user))
                 })
-                addProperty("temperature", 0.2)
                 addProperty("max_tokens", maxTokens)
                 addProperty("stream", false)
                 if (withEffort) addProperty("reasoning_effort", "none")
