@@ -148,6 +148,11 @@ class LabStore(private val ctx: Context) {
             sb.append("- `").append(r.strategy.ifBlank { "<baseline>" }).append("` — ")
                 .append(r.ok).append('/').append(r.total)
                 .append(" (").append(pct(r.score)).append(")")
+            if (r.perSite.isNotEmpty()) {
+                sb.append(" · ").append(
+                    r.perSite.entries.joinToString(", ") { (site, st) -> "$site ${st.ok}/${st.total}" }
+                )
+            }
             if (r.engineError != null) sb.append(" [").append(r.engineError).append("]")
             sb.append('\n')
         }
@@ -163,6 +168,17 @@ class LabStore(private val ctx: Context) {
 
     fun latestReport(): File? =
         dir.listFiles { f -> f.name.startsWith("report-") && f.name.endsWith(".md") }
+            ?.maxByOrNull { it.lastModified() }
+
+    /** Полный журнал запуска: по нему можно разбирать поведение приложения и LLM. */
+    fun saveLog(text: String, id: String = timestamp()): File {
+        val f = File(dir, "log-$id.txt")
+        f.writeText(text, Charsets.UTF_8)
+        return f
+    }
+
+    fun latestLog(): File? =
+        dir.listFiles { f -> f.name.startsWith("log-") && f.name.endsWith(".txt") }
             ?.maxByOrNull { it.lastModified() }
 
     fun latestRun(): LabRun? {

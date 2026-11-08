@@ -17,7 +17,8 @@ object PromptBuilder {
     /** Default knowledge base: can be edited on the lab screen. */
     fun defaultKnowledge(): String = DEFAULT_KB.trim()
 
-    fun system(knowledgeBase: String = "", useKnowledge: Boolean = false): String {
+    /** Get the system prompt without the output format specification */
+    fun system(knowledgeBase: String = "", useKnowledge: Boolean = false, customSystemPrompt: String = ""): String {
         val kb = knowledgeBase.trim()
         return buildString {
             append(CORE.trim())
@@ -25,10 +26,65 @@ object PromptBuilder {
                 append("\n\n=== KNOWLEDGE BASE (editable) ===\n")
                 append(kb)
             }
+            // Добавляем пользовательский системный промпт, если он задан
+            if (customSystemPrompt.isNotBlank()) {
+                append("\n\n=== CUSTOM SYSTEM PROMPT ===\n")
+                append(customSystemPrompt)
+            }
+            append("\n\n")
+            // Оставляем только основные правила без спецификации формата ответа
+            append(SYSTEM_RULES.trim())
+        }
+    }
+
+    /** Get the current system prompt with output format specification for reference */
+    fun systemWithOutputFormat(knowledgeBase: String = "", useKnowledge: Boolean = false, customSystemPrompt: String = ""): String {
+        val kb = knowledgeBase.trim()
+        return buildString {
+            append(CORE.trim())
+            if (useKnowledge && kb.isNotEmpty()) {
+                append("\n\n=== KNOWLEDGE BASE (editable) ===\n")
+                append(kb)
+            }
+            // Добавляем пользовательский системный промпт, если он задан
+            if (customSystemPrompt.isNotBlank()) {
+                append("\n\n=== CUSTOM SYSTEM PROMPT ===\n")
+                append(customSystemPrompt)
+            }
             append("\n\n")
             append(OUTPUT.trim())
         }
     }
+
+    private val SYSTEM_RULES = """
+=== RESPONSE FORMAT ===
+Return exactly one JSON object with the following structure:
+{
+  "summary": "1–2 sentences: what the round showed",
+  "data_quality": "sufficient|low|insufficient: why",
+  "arg_findings": [
+    {"arg": "-r-5+se", "effect": "positive|negative|neutral|unknown",
+     "confidence": "low|medium|high",
+     "evidence": "sites 1,3: 2 2 vs 0 0 for baseline"}
+  ],
+  "hypotheses": ["what we assume about DPI behavior"],
+  "next_strategies": [
+    {"args": "-X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1",
+     "why": "which single parameter we test"}
+  ],
+  "next_experiment": "one question that closes the round",
+  "apply_recommendation": "what to apply and when; if too early — say so"
+}
+
+Response rules:
+- All text fields — in Russian, concise.
+- evidence — only site numbers and figures from the request; do not invent.
+- next_strategies — 3–5 (or as many as the request asks), only valid args,
+  without -i/-p; each line unique.
+- Do not recommend applying a strategy that was not tested in this run.
+- No markdown, ```json, comments, or extra fields.
+- If data is scarce: data_quality="insufficient", but still provide next_strategies.
+""".trimIndent()
 
     fun user(
         run: LabRun,

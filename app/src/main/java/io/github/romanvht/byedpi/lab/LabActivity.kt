@@ -9,12 +9,14 @@ import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -27,10 +29,12 @@ import androidx.core.widget.doAfterTextChanged
 import androidx.preference.PreferenceManager
 import com.google.android.material.appbar.MaterialToolbar
 import io.github.romanvht.byedpi.R
+import io.github.romanvht.byedpi.BuildConfig
 import io.github.romanvht.byedpi.activities.BaseActivity
 import io.github.romanvht.byedpi.data.AppStatus
 import io.github.romanvht.byedpi.services.ServiceManager
 import io.github.romanvht.byedpi.services.appStatus
+import io.github.romanvht.byedpi.utility.ClipboardUtils
 import io.github.romanvht.byedpi.utility.HistoryUtils
 import io.github.romanvht.byedpi.utility.PermissionUtils
 import kotlinx.coroutines.CancellationException
@@ -41,6 +45,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * GUI лаборатории AI-подбора.
@@ -83,6 +90,28 @@ class LabActivity : BaseActivity() {
     private lateinit var logExpandBtn: Button
     private lateinit var kbResetBtn: Button
 
+    // Необязательные параметры OpenAI API
+    private lateinit var paramTemperatureCb: CheckBox
+    private lateinit var paramTemperature: EditText
+    private lateinit var paramTopPCb: CheckBox
+    private lateinit var paramTopP: EditText
+    private lateinit var paramPresenceCb: CheckBox
+    private lateinit var paramPresence: EditText
+    private lateinit var paramFrequencyCb: CheckBox
+    private lateinit var paramFrequency: EditText
+    private lateinit var paramSeedCb: CheckBox
+    private lateinit var paramSeed: EditText
+    private lateinit var paramReasoningCb: CheckBox
+    private lateinit var paramReasoning: Spinner
+    private lateinit var paramServiceTierCb: CheckBox
+    private lateinit var paramServiceTier: Spinner
+    private lateinit var paramStopCb: CheckBox
+    private lateinit var paramStop: EditText
+    private lateinit var paramUserCb: CheckBox
+    private lateinit var paramUser: EditText
+    private lateinit var paramResponseJson: CheckBox
+    private lateinit var paramStream: CheckBox
+
     // Сеть
     private lateinit var scanModeSpinner: Spinner
     private lateinit var llmNetSpinner: Spinner
@@ -91,7 +120,11 @@ class LabActivity : BaseActivity() {
     private lateinit var netSummary: TextView
 
     // Сайты и стратегии
-    private lateinit var presetSpinner: Spinner
+    private lateinit var pickSitesBtn: Button
+    private lateinit var sitesSummary: TextView
+    private lateinit var useOwnSites: CheckBox
+    private lateinit var useBaseStrategies: CheckBox
+    private lateinit var useOwnStrategies: CheckBox
     private lateinit var sites: EditText
     private lateinit var strategies: EditText
 
@@ -119,6 +152,9 @@ class LabActivity : BaseActivity() {
     }
 
     private var presets: List<Pair<String, String>> = emptyList()
+    private val selectedPresets = LinkedHashSet<String>()
+    private val runLog = StringBuilder()
+    private var savedSitesSnapshot: String? = null
 
     // Состояние для уведомления и бюджет промпта
     private var startedAt = 0L
@@ -167,16 +203,14 @@ class LabActivity : BaseActivity() {
             .setNavigationOnClickListener { finish() }
 
         presets = loadPresetList()
-        presetSpinner.adapter = ArrayAdapter(
-            this,
-            R.layout.lab_spinner_item,
-            presets.map { it.first }
-        ).apply { setDropDownViewResource(R.layout.lab_spinner_dropdown_item) }
         modelSpinner.adapter = modelAdapter
         loadPrefs()
         refreshBest()
         wireActions()
         updatePromptBudget()
+        updateSitesSummary()
+        updateStartEnabled()
+        updateParamEnabled()
         LabNotifications.ensureChannel(applicationContext)
 
         if (intent?.action == LabNotifications.ACTION_STOP && job?.isActive == true) {
@@ -238,12 +272,18 @@ class LabActivity : BaseActivity() {
         kbExpandBtn = findViewById(R.id.labKbExpandBtn)
         kbResetBtn = findViewById(R.id.labKbResetBtn)
 
-        presetSpinner = findViewById(R.id.labPreset)
+        pickSitesBtn = findViewById(R.id.labPickSitesBtn)
+        sitesSummary = findViewById(R.id.labSitesSummary)
+        useOwnSites = findViewById(R.id.labUseOwnSites)
+        useBaseStrategies = findViewById(R.id.labUseBaseStrategies)
+        useOwnStrategies = findViewById(R.id.labUseOwnStrategies)
         sites = findViewById(R.id.labSites)
         strategies = findViewById(R.id.labStrategies)
         sitesExpandBtn = findViewById(R.id.labSitesExpandBtn)
         strategiesExpandBtn = findViewById(R.id.labStrategiesExpandBtn)
         logExpandBtn = findViewById(R.id.labLogExpandBtn)
+
+        bindLlmParamViews()
 
         startBtn = findViewById(R.id.labStartBtn)
         stopBtn = findViewById(R.id.labStopBtn)
@@ -261,11 +301,11 @@ class LabActivity : BaseActivity() {
         scanBtn.setOnClickListener { scanWifi() }
         checkBtn.setOnClickListener { checkLlm() }
         findViewById<Button>(R.id.labShowNetBtn).setOnClickListener { showNetworks() }
-        findViewById<Button>(R.id.labLoadPresetBtn).setOnClickListener { loadPreset() }
         findViewById<Button>(R.id.labApplyBtn).setOnClickListener { applyLastBest() }
         findViewById<Button>(R.id.labTopBtn).setOnClickListener { showTop() }
-        findViewById<Button>(R.id.labReportBtn).setOnClickListener { showReport() }
+        findViewById<Button>(R.id.labReportBtn).setOnClickListener { showLogs() }
         findViewById<Button>(R.id.labClearBtn).setOnClickListener { logView.text = "" }
+        pickSitesBtn.setOnClickListener { pickSitePresets() }
 
         sitesExpandBtn.setOnClickListener {
             showFullscreenEditor(getString(R.string.lab_sites_title), sites)
@@ -288,6 +328,13 @@ class LabActivity : BaseActivity() {
         maxTokens.doAfterTextChanged { updatePromptBudget() }
         contextTokens.doAfterTextChanged { updatePromptBudget() }
 
+        useOwnSites.setOnCheckedChangeListener { _, _ -> updateSitesSummary() }
+        sites.doAfterTextChanged { updateSitesSummary() }
+        useBaseStrategies.setOnCheckedChangeListener { _, _ -> updateStartEnabled() }
+        useOwnStrategies.setOnCheckedChangeListener { _, _ -> updateStartEnabled() }
+
+        wireParamListeners()
+
         testNetSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -300,6 +347,104 @@ class LabActivity : BaseActivity() {
         }
         updateNetSummary()
     }
+
+    private fun bindLlmParamViews() {
+        paramTemperatureCb = findViewById(R.id.labParamTemperatureCb)
+        paramTemperature = findViewById(R.id.labParamTemperature)
+        paramTopPCb = findViewById(R.id.labParamTopPCb)
+        paramTopP = findViewById(R.id.labParamTopP)
+        paramPresenceCb = findViewById(R.id.labParamPresenceCb)
+        paramPresence = findViewById(R.id.labParamPresence)
+        paramFrequencyCb = findViewById(R.id.labParamFrequencyCb)
+        paramFrequency = findViewById(R.id.labParamFrequency)
+        paramSeedCb = findViewById(R.id.labParamSeedCb)
+        paramSeed = findViewById(R.id.labParamSeed)
+        paramReasoningCb = findViewById(R.id.labParamReasoningCb)
+        paramReasoning = findViewById(R.id.labParamReasoning)
+        paramServiceTierCb = findViewById(R.id.labParamServiceTierCb)
+        paramServiceTier = findViewById(R.id.labParamServiceTier)
+        paramStopCb = findViewById(R.id.labParamStopCb)
+        paramStop = findViewById(R.id.labParamStop)
+        paramUserCb = findViewById(R.id.labParamUserCb)
+        paramUser = findViewById(R.id.labParamUser)
+        paramResponseJson = findViewById(R.id.labParamResponseJson)
+        paramStream = findViewById(R.id.labParamStream)
+
+        setupSpinner(paramReasoning, LlmParams.REASONING_LEVELS.map { it to it })
+        setupSpinner(paramServiceTier, LlmParams.SERVICE_TIERS.map { it to it })
+    }
+
+    private fun wireParamListeners() {
+        listOf(
+            paramTemperatureCb, paramTopPCb, paramPresenceCb, paramFrequencyCb,
+            paramSeedCb, paramReasoningCb, paramServiceTierCb, paramStopCb, paramUserCb
+        ).forEach { cb ->
+            cb.setOnCheckedChangeListener { _, _ -> updateParamEnabled() }
+        }
+    }
+
+    private fun updateParamEnabled() {
+        if (!::paramTemperatureCb.isInitialized) return
+        paramTemperature.isEnabled = paramTemperatureCb.isChecked
+        paramTopP.isEnabled = paramTopPCb.isChecked
+        paramPresence.isEnabled = paramPresenceCb.isChecked
+        paramFrequency.isEnabled = paramFrequencyCb.isChecked
+        paramSeed.isEnabled = paramSeedCb.isChecked
+        paramReasoning.isEnabled = paramReasoningCb.isChecked
+        paramServiceTier.isEnabled = paramServiceTierCb.isChecked
+        paramStop.isEnabled = paramStopCb.isChecked
+        paramUser.isEnabled = paramUserCb.isChecked
+    }
+
+    private fun collectLlmParams(): LlmParams = LlmParams(
+        temperature = if (paramTemperatureCb.isChecked) {
+            decimal(paramTemperature, 0.2).coerceIn(0.0, 2.0)
+        } else {
+            null
+        },
+        topP = if (paramTopPCb.isChecked) {
+            decimal(paramTopP, 1.0).coerceIn(0.0, 1.0)
+        } else {
+            null
+        },
+        presencePenalty = if (paramPresenceCb.isChecked) {
+            decimal(paramPresence, 0.0).coerceIn(-2.0, 2.0)
+        } else {
+            null
+        },
+        frequencyPenalty = if (paramFrequencyCb.isChecked) {
+            decimal(paramFrequency, 0.0).coerceIn(-2.0, 2.0)
+        } else {
+            null
+        },
+        seed = if (paramSeedCb.isChecked) {
+            paramSeed.text.toString().toIntOrNull()?.coerceAtLeast(0)
+        } else {
+            null
+        },
+        stream = paramStream.isChecked,
+        reasoningEffort = if (paramReasoningCb.isChecked) {
+            LlmParams.REASONING_LEVELS.getOrElse(paramReasoning.selectedItemPosition) { "none" }
+        } else {
+            null
+        },
+        responseFormatJson = paramResponseJson.isChecked,
+        stop = if (paramStopCb.isChecked) {
+            paramStop.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() }.take(4)
+        } else {
+            emptyList()
+        },
+        serviceTier = if (paramServiceTierCb.isChecked) {
+            LlmParams.SERVICE_TIERS.getOrElse(paramServiceTier.selectedItemPosition) { "auto" }
+        } else {
+            null
+        },
+        user = if (paramUserCb.isChecked) {
+            paramUser.text.toString().trim().ifBlank { null }
+        } else {
+            null
+        }
+    )
 
     private fun updateNetSummary() {
         if (!::netSummary.isInitialized) return
@@ -338,16 +483,98 @@ class LabActivity : BaseActivity() {
             .show()
     }
 
+    // ------------------------------------------------------------- сайты
+
+    private fun pickSitePresets() {
+        if (presets.isEmpty()) {
+            toast("Нет доступных наборов сайтов")
+            return
+        }
+        val draft = LinkedHashSet(selectedPresets)
+        val names = presets.map { (label, file) ->
+            val count = siteLines(readAsset(file)).size
+            "$label ($count)"
+        }.toTypedArray()
+        val checked = presets.map { draft.contains(it.second) }.toBooleanArray()
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.lab_presets_title)
+            .setMultiChoiceItems(names, checked) { _, which, isChecked ->
+                val file = presets.getOrNull(which)?.second ?: return@setMultiChoiceItems
+                if (isChecked) draft.add(file) else draft.remove(file)
+            }
+            .setPositiveButton(R.string.lab_done_btn) { _, _ ->
+                selectedPresets.clear()
+                selectedPresets.addAll(draft)
+                updateSitesSummary()
+            }
+            .setNeutralButton(R.string.lab_presets_clear) { _, _ ->
+                selectedPresets.clear()
+                updateSitesSummary()
+            }
+            .setNegativeButton(R.string.lab_cancel_btn, null)
+            .show()
+    }
+
+    private fun selectedPresetSites(): List<String> {
+        if (selectedPresets.isEmpty()) return emptyList()
+        val out = LinkedHashSet<String>()
+        presets.forEach { (_, file) ->
+            if (selectedPresets.contains(file)) out.addAll(siteLines(readAsset(file)))
+        }
+        return out.toList()
+    }
+
+    private fun ownSites(): List<String> {
+        if (!::useOwnSites.isInitialized || !useOwnSites.isChecked) return emptyList()
+        return siteLines(sites.text.toString())
+    }
+
+    private fun effectiveSites(): List<String> {
+        val out = LinkedHashSet<String>()
+        out.addAll(selectedPresetSites())
+        out.addAll(ownSites())
+        return out.toList()
+    }
+
+    private fun siteLines(text: String): List<String> = text.lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") }
+
+    private fun updateSitesSummary() {
+        if (!::sitesSummary.isInitialized) return
+        val presetCount = selectedPresets.size
+        val presetSites = selectedPresetSites().size
+        val ownCount = ownSites().size
+        sitesSummary.text = if (presetCount == 0 && ownCount == 0) {
+            getString(R.string.lab_sites_summary_empty)
+        } else {
+            getString(R.string.lab_sites_summary, presetCount, presetSites, ownCount)
+        }
+        pickSitesBtn.text = if (presetCount == 0) {
+            getString(R.string.lab_pick_sites_btn)
+        } else {
+            getString(R.string.lab_pick_sites_btn) + " ($presetCount)"
+        }
+        updateStartEnabled()
+    }
+
+    private fun updateStartEnabled() {
+        if (!::startBtn.isInitialized) return
+        val running = job?.isActive == true
+        startBtn.isEnabled = !running && effectiveSites().isNotEmpty()
+        pickSitesBtn.isEnabled = !running
+    }
+
     // ------------------------------------------------------------- управление
 
     private fun start() {
         if (job?.isActive == true) return
 
-        val siteList = sites.text.toString().lines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
+        val siteList = effectiveSites()
         if (siteList.isEmpty()) {
-            toast("Добавь хотя бы один сайт")
+            toast(getString(R.string.lab_sites_summary_empty))
+            updateStartEnabled()
             return
         }
 
@@ -360,14 +587,18 @@ class LabActivity : BaseActivity() {
             modelAdapter.notifyDataSetChanged()
         }
 
-        val strategyList = strategies.text.toString().lines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .ifEmpty {
-                readAsset("lab_strategies.txt").lines()
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() && !it.startsWith("#") }
-            }
+        val ownStrategies = if (useOwnStrategies.isChecked) {
+            strategies.text.toString().lines()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+        } else {
+            emptyList()
+        }
+        val baseStrategies = if (useBaseStrategies.isChecked) {
+            val loaded = loadBaseStrategies()
+            println("Загружено стратегий из базы: ${loaded.size}")
+            loaded
+        } else emptyList()
 
         val cfg = LabConfig(
             baseUrl = url,
@@ -376,7 +607,10 @@ class LabActivity : BaseActivity() {
             rounds = number(rounds, 3, 1, 50),
             repeats = number(repeats, 2, 1, 6),
             sites = siteList,
-            strategies = strategyList,
+            strategies = ownStrategies,
+            baseStrategies = baseStrategies,
+            useBaseStrategies = useBaseStrategies.isChecked,
+            useOwnStrategies = useOwnStrategies.isChecked,
             maxMinutes = 240,
             target = 1.0,
             patience = number(patience, 2, 0, 20),
@@ -391,6 +625,7 @@ class LabActivity : BaseActivity() {
             llmTimeoutSec = number(llmTimeout, 300, 10, 1800),
             knowledgeBase = if (useKnowledge.isChecked) knowledgeBase.text.toString() else "",
             useKnowledge = useKnowledge.isChecked,
+            llmParams = collectLlmParams(),
             reuseBaseline = reuseBaseline.isChecked,
             autoApply = autoApply.isChecked,
             concurrency = number(concurrency, 8, 1, 32),
@@ -402,6 +637,7 @@ class LabActivity : BaseActivity() {
 
         savePrefs()
         logView.text = ""
+        startRunLog(cfg)
         lastCfg = cfg
         startedAt = System.currentTimeMillis()
         lastBestStrategy = ""
@@ -434,6 +670,7 @@ class LabActivity : BaseActivity() {
             } finally {
                 setRunning(false)
                 refreshBest()
+                saveRunLog()
             }
         }
     }
@@ -452,27 +689,52 @@ class LabActivity : BaseActivity() {
         lastBestScore = result.bestScore
         status.text = "Готово: ${pct(result.bestScore)} • ${result.rounds} раунд(ов)"
         notifyLab("Готово: ${pct(result.bestScore)}", 100, false, ongoing = false)
+
+        // Топ запуска записываем в поле «Стартовые стратегии»: следующий запуск
+        // не повторяет базовый перебор, а дорабатывает уже найденное.
+        if (lastCfg?.useBaseStrategies == true && result.topStrategies.isNotEmpty()) {
+            strategies.setText(result.topStrategies.joinToString("\n"))
+            useOwnStrategies.isChecked = true
+            useBaseStrategies.isChecked = false
+            prefs.edit {
+                putString("strategies", strategies.text.toString())
+                putBoolean("use_own_strategies", true)
+                putBoolean("use_base_strategies", false)
+            }
+            appendLog(
+                "Топ-${result.topStrategies.size} записан в «Стартовые стратегии». " +
+                    "«Подбор из базы» снят, «Свои стратегии» включены."
+            )
+        }
+
         if (result.bestStrategy.isNotBlank()) {
             bestView.text = "Лучшая: ${pct(result.bestScore)} • ${result.bestStrategy}"
+            appendLog(
+                "ИТОГ: лучшая ${pct(result.bestScore)} — ${result.bestStrategy}; " +
+                    "раундов ${result.rounds}; причина: ${result.stopReason}; " +
+                    "время ${result.seconds} с"
+            )
             AlertDialog.Builder(this)
                 .setTitle("Подбор завершён")
                 .setMessage(
                     "Лучшая стратегия (${pct(result.bestScore)}):\n\n" +
                         result.bestStrategy +
-                        "\n\nПричина остановки: " + result.stopReason
+                        "\n\nПричина остановки: " + result.stopReason +
+                        "\n\nТоп стратегий записан в «Стартовые стратегии»."
                 )
                 .setPositiveButton("Применить") { _, _ -> confirmApply(result.bestStrategy) }
-                .setNeutralButton("Отчёт") { _, _ -> showReport() }
+                .setNeutralButton(R.string.lab_report_btn) { _, _ -> showLogs() }
                 .setNegativeButton("Закрыть", null)
                 .show()
         }
     }
 
     private fun setRunning(running: Boolean) {
-        startBtn.isEnabled = !running
+        startBtn.isEnabled = !running && effectiveSites().isNotEmpty()
         stopBtn.isEnabled = running
         scanBtn.isEnabled = !running
         checkBtn.isEnabled = !running
+        pickSitesBtn.isEnabled = !running
         if (running) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             progressBar.progress = 0
@@ -480,6 +742,7 @@ class LabActivity : BaseActivity() {
             status.text = "Запуск…"
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            updateStartEnabled()
         }
     }
 
@@ -699,26 +962,25 @@ class LabActivity : BaseActivity() {
         refreshBest()
     }
 
-    private fun showReport() {
-        val f = runCatching { LabStore(this).latestReport() }.getOrNull()
-        if (f == null) {
-            toast("Отчётов пока нет")
+    private fun showLogs() {
+        val text = when {
+            runLog.isNotBlank() -> runLog.toString()
+            else -> {
+                val f = runCatching { LabStore(this).latestLog() }.getOrNull()
+                when {
+                    f != null -> runCatching { f.readText() }.getOrDefault("")
+                    else -> {
+                        val report = runCatching { LabStore(this).latestReport() }.getOrNull()
+                        report?.let { runCatching { it.readText() }.getOrDefault("") }.orEmpty()
+                    }
+                }
+            }
+        }
+        if (text.isBlank()) {
+            toast(getString(R.string.lab_logs_empty))
             return
         }
-        val text = runCatching { f.readText() }.getOrDefault("Не удалось прочитать отчёт")
-        val view = TextView(this).apply {
-            this.text = text
-            textSize = 11f
-            typeface = Typeface.MONOSPACE
-            setTextIsSelectable(true)
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-        }
-        val sv = ScrollView(this).apply { addView(view) }
-        AlertDialog.Builder(this)
-            .setTitle("Отчёт: ${f.name}")
-            .setView(sv)
-            .setPositiveButton("Закрыть", null)
-            .show()
+        showFullscreenText(getString(R.string.lab_logs_title), text, copyable = true)
     }
 
     private fun showTop() {
@@ -873,16 +1135,28 @@ class LabActivity : BaseActivity() {
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             typeface = Typeface.MONOSPACE
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            setScrollbarFadingEnabled(false)
-            isVerticalScrollBarEnabled = true
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            // Не включаем scrollbars вручную: на HyperOS/MIUI это приводит
+            // к NPE в View.onDrawScrollBars (null ScrollBarDrawable).
+            // EditText сам прокручивает текст, когда он не помещается.
+        }
+        val container = FrameLayout(this).apply {
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            addView(
+                input,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle(title)
-            .setView(input)
+            .setView(container)
             .setPositiveButton(R.string.lab_done_btn) { _, _ ->
                 source.setText(input.text)
                 updatePromptBudget()
+                updateSitesSummary()
             }
             .setNegativeButton(R.string.lab_cancel_btn, null)
             .create()
@@ -896,8 +1170,8 @@ class LabActivity : BaseActivity() {
         dialog.show()
     }
 
-    /** Полноэкранный просмотр длинного текста (журнал). */
-    private fun showFullscreenText(title: String, text: String) {
+    /** Полноэкранный просмотр длинного текста (журнал/логи). */
+    private fun showFullscreenText(title: String, text: String, copyable: Boolean = false) {
         val body = TextView(this).apply {
             this.text = text.ifBlank { "—" }
             typeface = Typeface.MONOSPACE
@@ -905,11 +1179,27 @@ class LabActivity : BaseActivity() {
             setPadding(dp(16), dp(12), dp(16), dp(12))
             setTextIsSelectable(true)
         }
-        val scroll = ScrollView(this).apply { addView(body) }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(
+                body,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
         val dialog = AlertDialog.Builder(this)
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(R.string.lab_close_btn, null)
+            .apply {
+                if (copyable) {
+                    setNeutralButton(R.string.lab_copy_btn) { _, _ ->
+                        ClipboardUtils.copy(this@LabActivity, text, title)
+                    }
+                }
+            }
             .create()
         dialog.setOnShowListener {
             dialog.window?.setLayout(
@@ -920,13 +1210,45 @@ class LabActivity : BaseActivity() {
         dialog.show()
     }
 
+    private fun startRunLog(cfg: LabConfig) {
+        runLog.setLength(0)
+        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        runLog.append("════════════ AI LAB ════════════\n")
+        runLog.append("Время: $now\n")
+        runLog.append("Версия: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
+        runLog.append("Устройство: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
+        runLog.append("LLM: ${cfg.baseUrl}  model=${cfg.model.ifBlank { "auto" }}\n")
+        runLog.append("Параметры API: ${cfg.llmParams.describe()}\n")
+        runLog.append(
+            "Подбор: раундов=${cfg.rounds}, повторов=${cfg.repeats}, " +
+                "кандидатов=${cfg.maxCandidates}, параллельно=${cfg.concurrency}, " +
+                "таймаут=${cfg.timeoutSec} с, ответ LLM=${cfg.llmTimeoutSec} с, " +
+                "контекст=${cfg.contextTokens}, max_tokens=${cfg.maxTokens}\n"
+        )
+        runLog.append("Сеть тестов: ${LabNetwork.targetLabel(cfg.testNetwork)}; LLM: ${LabNetwork.targetLabel(cfg.llmNetwork)}\n")
+        runLog.append("Сайты (${cfg.sites.size}): ${cfg.sites.joinToString(", ")}\n")
+        runLog.append(
+            "Стратегии: база=" + (if (cfg.useBaseStrategies) cfg.baseStrategies.size else "выкл") +
+                ", свои=" + (if (cfg.useOwnStrategies) cfg.strategies.size else "выкл") + "\n"
+        )
+        runLog.append("════════════════════════════════\n")
+    }
+
+    private fun saveRunLog() {
+        if (runLog.isBlank()) return
+        runCatching {
+            LabStore(applicationContext).saveLog(runLog.toString())
+        }
+    }
+
     private fun appendLog(line: String) {
+        runLog.append(line).append('\n')
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
             val current = logView.text?.toString().orEmpty()
             logView.text = when {
                 current.isEmpty() -> line
-                current.length > 80_000 -> current.takeLast(60_000) + "\n" + line
+                current.length > 200_000 -> current.takeLast(150_000) + "\n" + line
                 else -> current + "\n" + line
             }
             scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
@@ -974,8 +1296,49 @@ class LabActivity : BaseActivity() {
         bringUpBox.isChecked = prefs.getBoolean("bring_up", true)
         updateNetSummary()
 
-        sites.setText(prefs.getString("sites", null) ?: readAsset("lab_sites.txt"))
-        strategies.setText(prefs.getString("strategies", null) ?: readAsset("lab_strategies.txt"))
+        // Один раз чистим поле «Сайты» после перехода на выбор наборов:
+        // по умолчанию оно должно быть пустым.
+        if (!prefs.getBoolean("sites_v2", false)) {
+            sites.setText("")
+            prefs.edit { putBoolean("sites_v2", true) }
+        } else {
+            sites.setText(prefs.getString("sites", ""))
+        }
+        strategies.setText(prefs.getString("strategies", ""))
+
+        selectedPresets.clear()
+        selectedPresets.addAll(prefs.getStringSet("site_presets", emptySet()).orEmpty())
+        useOwnSites.isChecked = prefs.getBoolean("use_own_sites", false)
+        useBaseStrategies.isChecked = prefs.getBoolean("use_base_strategies", true)
+        useOwnStrategies.isChecked = prefs.getBoolean("use_own_strategies", false)
+
+        paramTemperatureCb.isChecked = prefs.getBoolean("p_temperature_on", true)
+        paramTemperature.setText(prefs.getString("p_temperature", "0.2"))
+        paramTopPCb.isChecked = prefs.getBoolean("p_top_p_on", false)
+        paramTopP.setText(prefs.getString("p_top_p", "1.0"))
+        paramPresenceCb.isChecked = prefs.getBoolean("p_presence_on", false)
+        paramPresence.setText(prefs.getString("p_presence", "0"))
+        paramFrequencyCb.isChecked = prefs.getBoolean("p_frequency_on", false)
+        paramFrequency.setText(prefs.getString("p_frequency", "0"))
+        paramSeedCb.isChecked = prefs.getBoolean("p_seed_on", false)
+        paramSeed.setText(prefs.getString("p_seed", "42"))
+        paramReasoningCb.isChecked = prefs.getBoolean("p_reasoning_on", false)
+        paramReasoning.setSelection(
+            LlmParams.REASONING_LEVELS.indexOf(prefs.getString("p_reasoning", "none")).coerceAtLeast(0)
+        )
+        paramServiceTierCb.isChecked = prefs.getBoolean("p_service_tier_on", false)
+        paramServiceTier.setSelection(
+            LlmParams.SERVICE_TIERS.indexOf(prefs.getString("p_service_tier", "auto")).coerceAtLeast(0)
+        )
+        paramStopCb.isChecked = prefs.getBoolean("p_stop_on", false)
+        paramStop.setText(prefs.getString("p_stop", ""))
+        paramUserCb.isChecked = prefs.getBoolean("p_user_on", false)
+        paramUser.setText(prefs.getString("p_user", ""))
+        paramResponseJson.isChecked = prefs.getBoolean("p_response_json", true)
+        paramStream.isChecked = prefs.getBoolean("p_stream", false)
+
+        updateParamEnabled()
+        updateSitesSummary()
     }
 
     private fun savePrefs() {
@@ -1002,6 +1365,31 @@ class LabActivity : BaseActivity() {
             putBoolean("bring_up", bringUpBox.isChecked)
             putString("sites", sites.text.toString())
             putString("strategies", strategies.text.toString())
+            putStringSet("site_presets", selectedPresets.toSet())
+            putBoolean("use_own_sites", useOwnSites.isChecked)
+            putBoolean("use_base_strategies", useBaseStrategies.isChecked)
+            putBoolean("use_own_strategies", useOwnStrategies.isChecked)
+
+            putBoolean("p_temperature_on", paramTemperatureCb.isChecked)
+            putString("p_temperature", paramTemperature.text.toString().trim())
+            putBoolean("p_top_p_on", paramTopPCb.isChecked)
+            putString("p_top_p", paramTopP.text.toString().trim())
+            putBoolean("p_presence_on", paramPresenceCb.isChecked)
+            putString("p_presence", paramPresence.text.toString().trim())
+            putBoolean("p_frequency_on", paramFrequencyCb.isChecked)
+            putString("p_frequency", paramFrequency.text.toString().trim())
+            putBoolean("p_seed_on", paramSeedCb.isChecked)
+            putString("p_seed", paramSeed.text.toString().trim())
+            putBoolean("p_reasoning_on", paramReasoningCb.isChecked)
+            putString("p_reasoning", LlmParams.REASONING_LEVELS.getOrElse(paramReasoning.selectedItemPosition) { "none" })
+            putBoolean("p_service_tier_on", paramServiceTierCb.isChecked)
+            putString("p_service_tier", LlmParams.SERVICE_TIERS.getOrElse(paramServiceTier.selectedItemPosition) { "auto" })
+            putBoolean("p_stop_on", paramStopCb.isChecked)
+            putString("p_stop", paramStop.text.toString())
+            putBoolean("p_user_on", paramUserCb.isChecked)
+            putString("p_user", paramUser.text.toString())
+            putBoolean("p_response_json", paramResponseJson.isChecked)
+            putBoolean("p_stream", paramStream.isChecked)
         }
     }
 
@@ -1061,12 +1449,7 @@ class LabActivity : BaseActivity() {
         else -> file.removeSuffix(".sites").removePrefix("proxytest_")
     }
 
-    private fun loadPreset() {
-        val index = presetSpinner.selectedItemPosition
-        val preset = presets.getOrNull(index) ?: return
-        sites.setText(readAsset(preset.second))
-        toast("Загружен набор: ${preset.first}")
-    }
+    private fun loadBaseStrategies(): List<String> = siteLines(readAsset("proxytest_strategies.list"))
 
     // ------------------------------------------------------------------ утилиты
 
@@ -1092,6 +1475,9 @@ class LabActivity : BaseActivity() {
 
     private fun number(field: EditText, def: Int, min: Int, max: Int): Int =
         field.text.toString().toIntOrNull()?.coerceIn(min, max) ?: def
+
+    private fun decimal(field: EditText, def: Double): Double =
+        field.text.toString().replace(',', '.').toDoubleOrNull() ?: def
 
     private fun pct(v: Double): String = "${(v * 100).toInt()}%"
 

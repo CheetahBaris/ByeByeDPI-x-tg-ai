@@ -8,7 +8,14 @@ data class LabConfig(
     val rounds: Int = 3,
     val repeats: Int = 2,
     val sites: List<String> = emptyList(),
+    /** Свои стратегии из поля ввода (используются, только если включён флажок). */
     val strategies: List<String> = emptyList(),
+    /** Стратегии из встроенной базы приложения (proxytest_strategies.list). */
+    val baseStrategies: List<String> = emptyList(),
+    /** Первый раунд начинается с прогона встроенной базы. */
+    val useBaseStrategies: Boolean = false,
+    /** Добавлять к первому раунду стратегии из поля ввода. */
+    val useOwnStrategies: Boolean = true,
     val maxMinutes: Int = 120,
     val target: Double = 1.0,
     val patience: Int = 2,
@@ -27,6 +34,10 @@ data class LabConfig(
     /** Редактируемая база знаний; добавляется в системный промпт. */
     val knowledgeBase: String = "",
     val useKnowledge: Boolean = true,
+    /** Редактируемый системный промпт. */
+    val systemPrompt: String = "",
+    /** Необязательные параметры REST API; по умолчанию не отправляются. */
+    val llmParams: LlmParams = LlmParams.EMPTY,
     val reuseBaseline: Boolean = true,
     val autoApply: Boolean = false,
     val concurrency: Int = 8,

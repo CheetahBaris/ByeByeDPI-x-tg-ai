@@ -351,11 +351,34 @@
     <string name="lab_params_hint">Перед запуском отключи основной VPN/Proxy приложения: лаборатория поднимает отдельный движок на порту 1081. Сеть для тестов выбирается в блоке «Сеть» выше.</string>
 
     <string name="lab_sites_title">Сайты для проверки</string>
-    <string name="lab_load_preset_btn">Загрузить</string>
-    <string name="lab_sites_hint">По одному сайту в строке. # — комментарий.</string>
+    <string name="lab_pick_sites_btn">Выбрать наборы сайтов</string>
+    <string name="lab_use_own_sites">Добавлять свои сайты из поля ниже</string>
+    <string name="lab_own_sites_hint">Свои сайты (по одному в строке)</string>
+    <string name="lab_sites_summary">Наборов: %1$d · сайтов из наборов: %2$d · своих: %3$d</string>
+    <string name="lab_sites_summary_empty">Ничего не выбрано: подбор не запустится</string>
+    <string name="lab_sites_hint">Наборы выбираются кнопкой выше (можно не выбирать ни одного). Текст в поле ниже участвует в прогоне только при включённом флажке «Добавлять свои сайты». # — комментарий.</string>
+    <string name="lab_presets_title">Наборы сайтов</string>
+    <string name="lab_presets_clear">Снять всё</string>
 
     <string name="lab_strategies_title">Стартовые стратегии</string>
-    <string name="lab_strategies_hint">Синтаксис ciadpi. Победитель на МегаФоне/LTE: -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1. Не используй -d 1 — валидатор его отклонит.</string>
+    <string name="lab_use_base_strategies">Подбор из базы приложения</string>
+    <string name="lab_use_base_strategies_hint">Первый раунд прогоняет встроенный список стратегий (proxytest_strategies.list), затем топ «Кандидатов» уходит в LLM. После запуска топ записывается в поле ниже, а галочка снимается.</string>
+    <string name="lab_use_own_strategies">Свои стратегии из поля</string>
+    <string name="lab_strategies_hint">Синтаксис ciadpi. Победитель на МегаФоне/LTE: -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1. Строки из поля участвуют только при включённом флажке «Свои стратегии».</string>
+
+    <string name="lab_api_params_title">Параметры запроса LLM (OpenAI API)</string>
+    <string name="lab_api_params_hint">Снятая галочка — параметр не отправляется. Если сервер не знает поле, запрос автоматически повторяется без необязательных параметров.</string>
+    <string name="lab_param_temperature">temperature</string>
+    <string name="lab_param_top_p">top_p</string>
+    <string name="lab_param_presence">presence_penalty</string>
+    <string name="lab_param_frequency">frequency_penalty</string>
+    <string name="lab_param_seed">seed</string>
+    <string name="lab_param_reasoning">reasoning_effort</string>
+    <string name="lab_param_service_tier">service_tier</string>
+    <string name="lab_param_stop">stop</string>
+    <string name="lab_param_user">user</string>
+    <string name="lab_param_response_json">response_format = json_object</string>
+    <string name="lab_param_stream">stream (потоковый ответ)</string>
 
     <string name="lab_kb_title">База знаний для LLM</string>
     <string name="lab_kb_use">Отправлять базу знаний в системном промпте</string>
@@ -380,6 +403,10 @@
     <string name="lab_show_btn">Показать</string>
     <string name="lab_apply_btn">Применить</string>
     <string name="lab_top_btn">Топ</string>
-    <string name="lab_report_btn">Отчёт</string>
+    <string name="lab_report_btn">Логи</string>
+    <string name="lab_logs_title">Логи запуска</string>
+    <string name="lab_copy_btn">Копировать</string>
+    <string name="lab_copy_done">Логи скопированы в буфер обмена</string>
+    <string name="lab_logs_empty">Логов пока нет — запусти подбор.</string>
     <string name="lab_clear_btn">Очистить</string>
 </resources>

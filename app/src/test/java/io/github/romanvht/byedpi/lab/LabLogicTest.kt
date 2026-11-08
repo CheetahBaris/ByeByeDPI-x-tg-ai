@@ -100,7 +100,7 @@ class LabLogicTest {
         assertTrue(system.contains("pos_t"))
         assertTrue(system.contains("next_strategies"))
         assertTrue(system.contains("arg_findings"))
-        assertTrue(system.contains("Запрещено"))
+        assertTrue(system.contains("Forbidden"))
         assertFalse(system.contains("Практика (Android"))
     }
 
@@ -229,7 +229,7 @@ class LabLogicTest {
         assertTrue(text.contains("-d 30+s"))
         assertFalse(text.contains("`-d 1+s`"))
         assertFalse(text.contains("`-d 20+s`"))
-        assertTrue(text.contains("(ещё 27 проверено раньше"))
+        assertTrue(text.contains("(27 more tested earlier"))
     }
 
     @Test

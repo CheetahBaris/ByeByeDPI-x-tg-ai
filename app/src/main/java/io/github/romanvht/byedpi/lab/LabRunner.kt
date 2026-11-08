@@ -45,6 +45,9 @@ class LabRunner(
     private var llmNetwork: Network? = null
     private var bindWarned = false
 
+    /** Нормализованные стратегии из встроенной базы: для них разрешён -d1. */
+    private val d1Allowed = HashSet<String>()
+
     suspend fun run(): LabResult {
         try {
             return runInternal()
@@ -67,12 +70,19 @@ class LabRunner(
 
         val tried = LinkedHashSet<String>()
 
+        cfg.baseStrategies.forEach { raw ->
+            val p = StrategyArgs.parse(raw, cfg.sni)
+            if (p.ok && p.normalized.isNotBlank()) d1Allowed.add(p.normalized)
+        }
+
         fun normalized(raw: String): String? {
             val p = StrategyArgs.parse(raw, cfg.sni)
             if (!p.ok || p.normalized.isBlank()) return null
-            if (cfg.forbidD1 && isD1(p.argv)) return null
+            if (cfg.forbidD1 && isD1(p.argv) && p.normalized !in d1Allowed) return null
             return p.normalized
         }
+
+        logConfig()
 
         val stored = runCatching { store.lastBest() }.getOrNull()
         if (stored != null && stored.score > 0 && stored.strategy.isNotBlank()) {
@@ -81,10 +91,28 @@ class LabRunner(
 
         val pending = LinkedHashSet<String>()
         if (stored != null) normalized(stored.strategy)?.let { pending.add(it) }
-        cfg.strategies.forEach { s -> normalized(s)?.let { pending.add(it) } }
+
+        val baseSeed = LinkedHashSet<String>()
+        if (cfg.useBaseStrategies) {
+            cfg.baseStrategies.forEach { raw ->
+                normalized(raw)?.let { baseSeed.add(it) }
+            }
+        }
+        val ownSeed = LinkedHashSet<String>()
+        if (cfg.useOwnStrategies) {
+            cfg.strategies.forEach { raw ->
+                normalized(raw)?.let { ownSeed.add(it) }
+            }
+        }
+        pending.addAll(baseSeed)
+        pending.addAll(ownSeed)
         if (pending.isEmpty()) {
             pending.addAll(StrategyMutations.systematic(cfg, emptySet(), cfg.maxCandidates))
         }
+        log(
+            "Стартовый раунд: прошлый лучший ${if (stored?.strategy.isNullOrBlank()) "нет" else "да"}, " +
+                "из базы ${baseSeed.size}, своих ${ownSeed.size}, всего ${pending.size}"
+        )
 
         testNetwork = LabNetwork.acquire(ctx, cfg.testNetwork, cfg.bringUpNetwork)
         if (cfg.testNetwork == NetTarget.CELLULAR && testNetwork == null) {
@@ -119,7 +147,8 @@ class LabRunner(
                 model = cfg.model,
                 apiKey = cfg.apiKey,
                 network = llmNetwork,
-                readTimeoutMs = cfg.llmTimeoutSec.coerceIn(10, 1800) * 1000
+                readTimeoutMs = cfg.llmTimeoutSec.coerceIn(10, 1800) * 1000,
+                params = cfg.llmParams
             )
             log(
                 "LLM: ${llm?.baseUrl} (model=${cfg.model.ifBlank { "auto" }}) через " +
@@ -162,14 +191,13 @@ class LabRunner(
             if (baseline == null || !cfg.reuseBaseline) {
                 progress(LabProgress(phase = "baseline", round = round, message = "Измеряю baseline…"))
                 val b = probeStrategy("")
-                log("baseline: ${b.ok}/${b.total} (${pct(b.score)})")
+                log("baseline: ${b.ok}/${b.total} (${pct(b.score)})${perSiteDetail(b)}")
                 if (baseline == null || !cfg.reuseBaseline) baseline = b
             }
 
             val run = runRound(round, pending.toList(), baseline, bestStrategy, bestScore)
             runCatching { store.saveRun(run) }
             runCatching { store.recordRun(run) }
-
             val scoreBefore = bestScore
             val roundBest = run.results
                 .filter { it.engineError == null && it.total > 0 && it.strategy.isNotBlank() }
@@ -187,9 +215,27 @@ class LabRunner(
 
             tried += run.results.map { it.strategy }.filter { it.isNotBlank() }
 
+            // После первого прогона встроенной базы оставляем для LLM только топ
+            // «Кандидатов»: модель не тонет в 60 строках и видит лучшие результаты.
+            val analysisRun = if (round == 1 && cfg.useBaseStrategies &&
+                run.results.size > cfg.maxCandidates
+            ) {
+                val top = run.results
+                    .filter { it.engineError == null && it.total > 0 && it.strategy.isNotBlank() }
+                    .sortedByDescending { it.score }
+                    .take(cfg.maxCandidates)
+                log("Базовый прогон: ${run.results.size} стратегий, для анализа отобрано топ-${top.size}")
+                top.forEachIndexed { i, r ->
+                    log("  топ-${i + 1}: ${r.ok}/${r.total} ${pct(r.score)} ${r.strategy}")
+                }
+                if (top.isNotEmpty()) run.copy(results = top) else run
+            } else {
+                run
+            }
+
             if (bestScore >= cfg.target) {
                 stopReason = "цель достигнута (${pct(bestScore)})"
-                runCatching { store.saveReport(run, null, bestStrategy, bestScore) }
+                runCatching { store.saveReport(analysisRun, null, bestStrategy, bestScore) }
                 break
             }
 
@@ -202,7 +248,7 @@ class LabRunner(
                     bestScore = bestScore
                 ))
                 try {
-                    analyze(run, bestStrategy, bestScore, tried)
+                    analyze(analysisRun, bestStrategy, bestScore, tried)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -213,10 +259,10 @@ class LabRunner(
                 null
             }
             runCatching {
-                store.saveReport(run, analysis, bestStrategy, bestScore)
+                store.saveReport(analysisRun, analysis, bestStrategy, bestScore)
             }
 
-            val candidates = pickCandidates(run, analysis, tried, bestStrategy)
+            val candidates = pickCandidates(analysisRun, analysis, tried, bestStrategy)
             if (candidates.isEmpty()) {
                 stopReason = "нет новых кандидатов"
                 log("СТОП: кандидаты закончились")
@@ -226,6 +272,7 @@ class LabRunner(
             pending.clear()
             pending.addAll(candidates)
             log("Следующий раунд: ${candidates.size} стратегий")
+            candidates.forEachIndexed { i, s -> log("  ${i + 1}. $s") }
         }
 
         // Финальная проверка лучшей стратегии с большим числом повторов:
@@ -240,7 +287,10 @@ class LabRunner(
                 bestScore = bestScore
             ))
             val v = probeStrategy(bestStrategy, repeatsForCheck)
-            log("Проверка лучшей (${v.total} запросов): ${v.ok}/${v.total} (${pct(v.score)})")
+            log(
+                "Проверка лучшей (${v.total} запросов): ${v.ok}/${v.total} " +
+                    "(${pct(v.score)})${perSiteDetail(v)}"
+            )
             if (v.score >= bestScore) bestScore = v.score
 
             val validationRun = LabRun(
@@ -257,14 +307,30 @@ class LabRunner(
             runCatching { store.recordRun(validationRun) }
         }
 
+        val topStrategies = runCatching {
+            store.bestStrategies()
+                .filter {
+                    it.strategy.isNotBlank() && it.score > 0 &&
+                        !(cfg.forbidD1 && isD1(StrategyArgs.parse(it.strategy, cfg.sni).argv))
+                }
+                .take(cfg.maxCandidates)
+                .map { it.strategy }
+        }.getOrDefault(emptyList())
+
         val result = LabResult(
             bestStrategy = bestStrategy,
             bestScore = bestScore,
             rounds = round,
             stopReason = stopReason,
-            seconds = (System.currentTimeMillis() - started) / 1000
+            seconds = (System.currentTimeMillis() - started) / 1000,
+            topStrategies = topStrategies
         )
         runCatching { store.saveResult(result) }
+
+        if (topStrategies.isNotEmpty()) {
+            log("Топ стратегий (${topStrategies.size}) для следующего запуска:")
+            topStrategies.forEachIndexed { i, s -> log("  ${i + 1}. $s") }
+        }
 
         if (cfg.autoApply && bestStrategy.isNotBlank() && bestScore > 0) {
             applyBest(bestStrategy)
@@ -309,9 +375,12 @@ class LabRunner(
             ))
             val r = probeStrategy(strategy)
             results.add(r)
-            log("  ${r.ok}/${r.total}  ${pct(r.score)}  ${strategy.ifBlank { "<baseline>" }}${
-                if (r.engineError != null) "  [${r.engineError}]" else ""
-            }")
+            log(
+                "  ${r.ok}/${r.total}  ${pct(r.score)}  ${strategy.ifBlank { "<baseline>" }}" +
+                    "  ${r.sec}с" +
+                    perSiteDetail(r) +
+                    if (r.engineError != null) "  [${r.engineError}]" else ""
+            )
         }
 
         return LabRun(
@@ -340,7 +409,7 @@ class LabRunner(
         if (!parsed.ok) {
             return StrategyResult(strategy, engineError = "невалидно: ${parsed.error}")
         }
-        if (cfg.forbidD1 && isD1(parsed.argv)) {
+        if (cfg.forbidD1 && isD1(parsed.argv) && parsed.normalized !in d1Allowed) {
             return StrategyResult(strategy, engineError = "запрещён -d 1")
         }
 
@@ -433,7 +502,7 @@ class LabRunner(
         tried: Collection<String>
     ): LlmAnalysis {
         val client = llm ?: throw IllegalStateException("LLM не настроена")
-        val system = PromptBuilder.system(cfg.knowledgeBase, cfg.useKnowledge)
+        val system = PromptBuilder.system(cfg.knowledgeBase, cfg.useKnowledge, cfg.systemPrompt)
         val systemTokens = PromptBuilder.estimateTokens(system)
 
         // Сжимаем промпт сами: история и список проверенных съедают контекст
@@ -481,6 +550,12 @@ class LabRunner(
             }
         }
 
+        // Полные промпты в лог: по ним можно разобрать поведение модели без повтора запуска.
+        log("──── LLM system prompt (${systemTokens} токенов) ────")
+        log(system)
+        log("──── LLM user prompt ($promptTokens всего с system) ────")
+        log(user)
+
         val text = try {
             withContext(Dispatchers.IO) { client.chat(system, user, cfg.maxTokens) }
         } catch (e: java.net.SocketTimeoutException) {
@@ -490,6 +565,8 @@ class LabRunner(
                 e
             )
         }
+        log("──── LLM ответ (${text.length} символов) ────")
+        log(text)
         var analysis = PromptBuilder.parseAnalysis(text)
         if (!analysis.hasPayload()) {
             // Небольшие модели иногда отвечают прозой или ломают JSON — один повтор.
@@ -505,6 +582,8 @@ class LabRunner(
                 }
             }.getOrNull()
             if (retry != null) {
+                log("──── LLM повторный ответ (${retry.length} символов) ────")
+                log(retry)
                 val second = PromptBuilder.parseAnalysis(retry)
                 if (second.hasPayload()) analysis = second
             }
@@ -532,7 +611,7 @@ class LabRunner(
             val p = StrategyArgs.parse(raw, cfg.sni)
             if (!p.ok || p.normalized.isBlank()) return
             if (p.normalized in tried || p.normalized in seen) return
-            if (cfg.forbidD1 && isD1(p.argv)) return
+            if (cfg.forbidD1 && isD1(p.argv) && p.normalized !in d1Allowed) return
             seen.add(p.normalized)
             out.add(p.normalized)
         }
@@ -567,8 +646,51 @@ class LabRunner(
         return out.take(cfg.maxCandidates)
     }
 
-    private fun applyBest(strategy: String) {
-        runCatching {
+    // ------------------------------------------------------------- логирование
+
+    private fun logConfig() {
+        log("════════ Конфигурация запуска ════════")
+        log(
+            "LLM: ${cfg.baseUrl}  model=${cfg.model.ifBlank { "auto" }}  " +
+                "timeout=${cfg.llmTimeoutSec}с  context=${cfg.contextTokens}  " +
+                "max_tokens=${cfg.maxTokens}"
+        )
+        log("Параметры API: ${cfg.llmParams.describe()}")
+        log(
+            "Подбор: раундов=${cfg.rounds}  повторов=${cfg.repeats}  " +
+                "кандидатов=${cfg.maxCandidates}  стоп без прироста=${cfg.patience}  " +
+                "параллельно=${cfg.concurrency}  таймаут=${cfg.timeoutSec}с"
+        )
+        log(
+            "Сеть: тесты=${LabNetwork.targetLabel(cfg.testNetwork)}, " +
+                "LLM=${LabNetwork.targetLabel(cfg.llmNetwork)}, " +
+                "поднимать=${cfg.bringUpNetwork}"
+        )
+        log("Сайты (${cfg.sites.size}): ${cfg.sites.joinToString(", ")}")
+        log(
+            "Стратегии: база=" + (if (cfg.useBaseStrategies) "${cfg.baseStrategies.size}" else "выкл") +
+                ", свои=" + (if (cfg.useOwnStrategies) "${cfg.strategies.size}" else "выкл") +
+                ", прошлый лучший=да/нет (см. ниже)"
+        )
+        log(
+            "База знаний: " +
+                if (cfg.useKnowledge && cfg.knowledgeBase.isNotBlank()) {
+                    "~${PromptBuilder.estimateTokens(cfg.knowledgeBase)} токенов"
+                } else {
+                    "выключена"
+                }
+        )
+        log("══════════════════════════════════════")
+    }
+
+    private fun perSiteDetail(r: StrategyResult): String {
+        if (r.perSite.isEmpty()) return ""
+        return " | " + r.perSite.entries.joinToString("  ") { (site, stat) ->
+            "$site=${stat.ok}/${stat.total}"
+        }
+    }
+
+    private fun applyBest(strategy: String) {        runCatching {
             val prefs = ctx.getPreferences()
             prefs.edit(commit = true) {
                 putString("byedpi_cmd_args", strategy)

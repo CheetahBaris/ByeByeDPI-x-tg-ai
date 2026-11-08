@@ -231,6 +231,306 @@
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
+                    <!-- Необязательные параметры OpenAI API -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        app:cardCornerRadius="12dp"
+                        app:strokeWidth="0dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_api_params_title"
+                                android:textColor="?android:textColorPrimary"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:alpha="0.75"
+                                android:text="@string/lab_api_params_hint"
+                                android:textColor="?android:textColorSecondary"
+                                android:textSize="11sp" />
+
+                            <!-- temperature -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamTemperatureCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:checked="true"
+                                    android:text="@string/lab_param_temperature"
+                                    android:textSize="12sp" />
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:layout_width="110dp"
+                                    android:layout_height="wrap_content">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/labParamTemperature"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="numberDecimal"
+                                        android:maxLines="1"
+                                        android:text="0.2" />
+                                </com.google.android.material.textfield.TextInputLayout>
+                            </LinearLayout>
+
+                            <!-- top_p -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamTopPCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_top_p"
+                                    android:textSize="12sp" />
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:layout_width="110dp"
+                                    android:layout_height="wrap_content">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/labParamTopP"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="numberDecimal"
+                                        android:maxLines="1"
+                                        android:text="1.0" />
+                                </com.google.android.material.textfield.TextInputLayout>
+                            </LinearLayout>
+
+                            <!-- presence_penalty -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamPresenceCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_presence"
+                                    android:textSize="12sp" />
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:layout_width="110dp"
+                                    android:layout_height="wrap_content">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/labParamPresence"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="numberDecimal|numberSigned"
+                                        android:maxLines="1"
+                                        android:text="0" />
+                                </com.google.android.material.textfield.TextInputLayout>
+                            </LinearLayout>
+
+                            <!-- frequency_penalty -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamFrequencyCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_frequency"
+                                    android:textSize="12sp" />
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:layout_width="110dp"
+                                    android:layout_height="wrap_content">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/labParamFrequency"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="numberDecimal|numberSigned"
+                                        android:maxLines="1"
+                                        android:text="0" />
+                                </com.google.android.material.textfield.TextInputLayout>
+                            </LinearLayout>
+
+                            <!-- seed -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamSeedCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_seed"
+                                    android:textSize="12sp" />
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:layout_width="110dp"
+                                    android:layout_height="wrap_content">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/labParamSeed"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="number"
+                                        android:maxLines="1"
+                                        android:text="42" />
+                                </com.google.android.material.textfield.TextInputLayout>
+                            </LinearLayout>
+
+                            <!-- reasoning_effort -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamReasoningCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_reasoning"
+                                    android:textSize="12sp" />
+
+                                <Spinner
+                                    android:id="@+id/labParamReasoning"
+                                    android:layout_width="110dp"
+                                    android:layout_height="44dp" />
+                            </LinearLayout>
+
+                            <!-- service_tier -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamServiceTierCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_service_tier"
+                                    android:textSize="12sp" />
+
+                                <Spinner
+                                    android:id="@+id/labParamServiceTier"
+                                    android:layout_width="110dp"
+                                    android:layout_height="44dp" />
+                            </LinearLayout>
+
+                            <!-- stop -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamStopCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_stop"
+                                    android:textSize="12sp" />
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:layout_width="110dp"
+                                    android:layout_height="wrap_content">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/labParamStop"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="text"
+                                        android:maxLines="1" />
+                                </com.google.android.material.textfield.TextInputLayout>
+                            </LinearLayout>
+
+                            <!-- user -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <com.google.android.material.checkbox.MaterialCheckBox
+                                    android:id="@+id/labParamUserCb"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/lab_param_user"
+                                    android:textSize="12sp" />
+
+                                <com.google.android.material.textfield.TextInputLayout
+                                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                                    android:layout_width="110dp"
+                                    android:layout_height="wrap_content">
+
+                                    <com.google.android.material.textfield.TextInputEditText
+                                        android:id="@+id/labParamUser"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:inputType="text"
+                                        android:maxLines="1" />
+                                </com.google.android.material.textfield.TextInputLayout>
+                            </LinearLayout>
+
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/labParamResponseJson"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="@string/lab_param_response_json"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/labParamStream"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/lab_param_stream"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
                     <!-- Сеть -->
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
@@ -577,48 +877,47 @@
                                     android:textSize="11sp" />
                             </LinearLayout>
 
-                            <LinearLayout
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/labPickSitesBtn"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="44dp"
+                                android:layout_marginTop="8dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="@string/lab_pick_sites_btn"
+                                android:textAllCaps="false" />
+
+                            <TextView
+                                android:id="@+id/labSitesSummary"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="8dp"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
+                                android:layout_marginTop="6dp"
+                                android:alpha="0.8"
+                                android:textColor="?android:textColorSecondary"
+                                android:textSize="11sp" />
 
-                                <Spinner
-                                    android:id="@+id/labPreset"
-                                    android:layout_width="0dp"
-                                    android:layout_height="48dp"
-                                    android:layout_weight="1" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/labLoadPresetBtn"
-                                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="44dp"
-                                    android:layout_marginStart="4dp"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp"
-                                    android:text="@string/lab_load_preset_btn"
-                                    android:textAllCaps="false" />
-                            </LinearLayout>
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/labUseOwnSites"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@string/lab_use_own_sites"
+                                android:textSize="12sp" />
 
                             <com.google.android.material.textfield.TextInputLayout
                                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp">
+                                android:layout_marginTop="4dp"
+                                android:hint="@string/lab_own_sites_hint">
 
                                 <com.google.android.material.textfield.TextInputEditText
                                     android:id="@+id/labSites"
                                     android:layout_width="match_parent"
                                     android:layout_height="160dp"
-                                    android:fadeScrollbars="false"
                                     android:gravity="top|start"
                                     android:inputType="textMultiLine|textNoSuggestions"
-                                    android:nestedScrollingEnabled="true"
-                                    android:overScrollMode="always"
-                                    android:scrollbarStyle="insideInset"
-                                    android:scrollbars="vertical"
                                     android:textSize="12sp"
                                     android:typeface="monospace" />
                             </com.google.android.material.textfield.TextInputLayout>
@@ -675,6 +974,31 @@
                                     android:textSize="11sp" />
                             </LinearLayout>
 
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/labUseBaseStrategies"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:checked="true"
+                                android:text="@string/lab_use_base_strategies"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:alpha="0.7"
+                                android:text="@string/lab_use_base_strategies_hint"
+                                android:textColor="?android:textColorSecondary"
+                                android:textSize="11sp" />
+
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/labUseOwnStrategies"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@string/lab_use_own_strategies"
+                                android:textSize="12sp" />
+
                             <com.google.android.material.textfield.TextInputLayout
                                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                                 android:layout_width="match_parent"
@@ -685,12 +1009,8 @@
                                     android:id="@+id/labStrategies"
                                     android:layout_width="match_parent"
                                     android:layout_height="120dp"
-                                    android:fadeScrollbars="false"
                                     android:gravity="top|start"
                                     android:inputType="textMultiLine|textNoSuggestions"
-                                    android:nestedScrollingEnabled="true"
-                                    android:overScrollMode="always"
-                                    android:scrollbarStyle="insideInset"
                                     android:scrollbars="vertical"
                                     android:textSize="11sp"
                                     android:typeface="monospace" />
@@ -776,13 +1096,8 @@
                                     android:id="@+id/labKb"
                                     android:layout_width="match_parent"
                                     android:layout_height="200dp"
-                                    android:fadeScrollbars="false"
                                     android:gravity="top|start"
                                     android:inputType="textMultiLine|textNoSuggestions"
-                                    android:nestedScrollingEnabled="true"
-                                    android:overScrollMode="always"
-                                    android:scrollbarStyle="insideInset"
-                                    android:scrollbars="vertical"
                                     android:textSize="12sp"
                                     android:typeface="monospace" />
                             </com.google.android.material.textfield.TextInputLayout>

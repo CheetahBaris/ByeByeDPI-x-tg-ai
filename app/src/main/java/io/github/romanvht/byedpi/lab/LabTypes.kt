@@ -91,7 +91,9 @@ data class LabResult(
     val bestScore: Double = 0.0,
     val rounds: Int = 0,
     val stopReason: String = "",
-    val seconds: Long = 0
+    val seconds: Long = 0,
+    /** Топ стратегий запуска: записывается в поле «Стартовые стратегии». */
+    val topStrategies: List<String> = emptyList()
 )
 
 /** Живой прогресс для GUI. */
