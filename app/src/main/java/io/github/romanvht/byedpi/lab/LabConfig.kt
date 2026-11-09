@@ -38,6 +38,8 @@ data class LabConfig(
     val systemPrompt: String = "",
     /** Отправлять системный промпт в запросе к LLM. */
     val useSystemPrompt: Boolean = true,
+    /** Одна сессия с LLM: system/правила/база отправляются только один раз. */
+    val useSession: Boolean = true,
     /** Необязательные параметры REST API; по умолчанию не отправляются. */
     val llmParams: LlmParams = LlmParams.EMPTY,
     val reuseBaseline: Boolean = true,

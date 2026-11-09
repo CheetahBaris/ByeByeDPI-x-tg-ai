@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.google.gson.JsonObject
 import java.io.File
 
 class LabLogicTest {
@@ -149,6 +150,84 @@ class LabLogicTest {
         assertFalse(user.contains(kb))
         assertFalse(user.contains("arg_findings"))
         assertTrue(user.endsWith("/no_think"))
+    }
+
+    @Test
+    fun `system without knowledge keeps rules and schema`() {
+        val kb = "Моя сеть: провайдер X, IPv6 сломан"
+        val full = PromptBuilder.system(kb, useKnowledge = true)
+        val trimmed = PromptBuilder.withoutKnowledge(full)
+        assertFalse(trimmed.contains(kb))
+        assertFalse(trimmed.contains("=== KNOWLEDGE BASE"))
+        assertTrue(trimmed.contains("pos_t"))
+        assertTrue(trimmed.contains("next_strategies"))
+        assertTrue(trimmed.length < full.length)
+        // Если базы нет — текст не меняется.
+        val noKb = PromptBuilder.system()
+        assertEquals(noKb, PromptBuilder.withoutKnowledge(noKb))
+    }
+
+    @Test
+    fun `session compaction fits budget and keeps fresh round`() {
+        val system = PromptBuilder.system("база", useKnowledge = true)
+        val history = mutableListOf(msg("system", system))
+        for (round in 1..4) {
+            history.add(msg("user", "## Round $round\n" + "data ".repeat(400)))
+            history.add(
+                msg(
+                    "assistant",
+                    """{"summary":"итог раунда $round","next_strategies":[]}"""
+                )
+            )
+        }
+        val sysTokens = SessionCompactor.messageTokens(history.first())
+        val budget = sysTokens + 300
+
+        val after = SessionCompactor.compact(history, budget)
+
+        assertEquals(after, SessionCompactor.estimate(history))
+        assertTrue("after=$after budget=$budget", after <= budget)
+        assertEquals("system", SessionCompactor.role(history.first()))
+        assertTrue(history.any { SessionCompactor.isSummary(it) })
+        assertTrue(history.any { SessionCompactor.content(it).contains("итог раунда 4") })
+        assertFalse(history.any { SessionCompactor.content(it).contains("Round 1") })
+    }
+
+    @Test
+    fun `session compaction strips knowledge base when no room`() {
+        val kb = "K".repeat(3000)
+        val system = PromptBuilder.system(kb, useKnowledge = true)
+        val history = mutableListOf(
+            msg("system", system),
+            msg("user", "## Round 1\n" + "data ".repeat(400)),
+            msg("assistant", """{"summary":"итог"}""")
+        )
+
+        SessionCompactor.compact(history, 200)
+
+        val systemText = SessionCompactor.content(history.first())
+        assertFalse(systemText.contains(kb))
+        assertFalse(systemText.contains("=== KNOWLEDGE BASE"))
+        assertEquals(PromptBuilder.responseFormat(), systemText)
+    }
+
+    @Test
+    fun `session compaction is a no-op when everything fits`() {
+        val system = PromptBuilder.system()
+        val history = mutableListOf(
+            msg("system", system),
+            msg("user", "## Round 1\nshort"),
+            msg("assistant", """{"summary":"итог"}""")
+        )
+        val before = history.map { SessionCompactor.content(it) }
+        val after = SessionCompactor.compact(history, 100_000)
+        assertEquals(SessionCompactor.estimate(history), after)
+        assertEquals(before, history.map { SessionCompactor.content(it) })
+    }
+
+    private fun msg(role: String, content: String): JsonObject = JsonObject().apply {
+        addProperty("role", role)
+        addProperty("content", content)
     }
 
     @Test

@@ -53,6 +53,20 @@ object PromptBuilder {
         }
     }
 
+    /**
+     * System message without the knowledge base.
+     *
+     * Used when the session has to be compacted and the editable base no longer
+     * fits into the model context: rules and the JSON schema stay, the base goes.
+     */
+    fun withoutKnowledge(system: String): String {
+        val start = system.indexOf("=== KNOWLEDGE BASE")
+        if (start < 0) return system
+        val end = system.indexOf("=== RESPONSE FORMAT", start)
+        if (end < 0) return system
+        return (system.substring(0, start).trimEnd() + "\n\n" + system.substring(end)).trim()
+    }
+
     fun user(
         run: LabRun,
         history: List<String>,

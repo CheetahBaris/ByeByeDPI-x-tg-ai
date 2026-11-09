@@ -1087,6 +1087,22 @@
                                 android:text="@string/lab_system_prompt_use"
                                 android:textSize="12sp" />
 
+                            <com.google.android.material.checkbox.MaterialCheckBox
+                                android:id="@+id/labUseSession"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="@string/lab_use_session"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:alpha="0.7"
+                                android:text="@string/lab_use_session_hint"
+                                android:textColor="?android:textColorSecondary"
+                                android:textSize="11sp" />
+
                             <com.google.android.material.textfield.TextInputLayout
                                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                                 android:layout_width="match_parent"

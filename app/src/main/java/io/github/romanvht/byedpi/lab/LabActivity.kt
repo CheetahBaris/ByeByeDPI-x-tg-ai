@@ -87,6 +87,7 @@ class LabActivity : BaseActivity() {
     private lateinit var systemPromptInput: EditText
     private lateinit var systemPromptExpandBtn: Button
     private lateinit var systemPromptResetBtn: Button
+    private lateinit var useSession: CheckBox
     private lateinit var promptBudget: TextView
     private lateinit var sitesExpandBtn: Button
     private lateinit var strategiesExpandBtn: Button
@@ -276,6 +277,7 @@ class LabActivity : BaseActivity() {
         systemPromptInput = findViewById(R.id.labSystemPrompt)
         systemPromptExpandBtn = findViewById(R.id.labSystemPromptExpandBtn)
         systemPromptResetBtn = findViewById(R.id.labSystemPromptResetBtn)
+        useSession = findViewById(R.id.labUseSession)
         promptBudget = findViewById(R.id.labPromptBudget)
         kbExpandBtn = findViewById(R.id.labKbExpandBtn)
         kbResetBtn = findViewById(R.id.labKbResetBtn)
@@ -644,6 +646,7 @@ class LabActivity : BaseActivity() {
                 ""
             },
             useSystemPrompt = useSystemPrompt.isChecked,
+            useSession = useSession.isChecked,
             llmParams = collectLlmParams(),
             reuseBaseline = reuseBaseline.isChecked,
             autoApply = autoApply.isChecked,
@@ -1299,6 +1302,7 @@ class LabActivity : BaseActivity() {
         systemPromptInput.setText(
             prefs.getString("system_prompt", null) ?: PromptBuilder.defaultSystemPrompt()
         )
+        useSession.isChecked = prefs.getBoolean("use_session", true)
         updateSystemPromptEnabled()
 
         select(
@@ -1394,6 +1398,7 @@ class LabActivity : BaseActivity() {
             putString("knowledge_base", knowledgeBase.text.toString())
             putBoolean("use_system_prompt", useSystemPrompt.isChecked)
             putString("system_prompt", systemPromptInput.text.toString())
+            putBoolean("use_session", useSession.isChecked)
             putString("scan_mode", selected(scanModeSpinner, scanOptions, ScanMode.BOTH).name)
             putString("llm_net", selected(llmNetSpinner, llmOptions, NetTarget.AUTO).name)
             putString("test_net", selected(testNetSpinner, testOptions, NetTarget.SYSTEM).name)

@@ -148,7 +148,10 @@ class LabRunner(
                 apiKey = cfg.apiKey,
                 network = llmNetwork,
                 readTimeoutMs = cfg.llmTimeoutSec.coerceIn(10, 1800) * 1000,
-                params = cfg.llmParams
+                params = cfg.llmParams,
+                session = cfg.useSession,
+                contextTokens = cfg.contextTokens,
+                onLog = log
             )
             log(
                 "LLM: ${llm?.baseUrl} (model=${cfg.model.ifBlank { "auto" }}) через " +
@@ -509,6 +512,7 @@ class LabRunner(
             useSystemPrompt = cfg.useSystemPrompt
         )
         val systemTokens = PromptBuilder.estimateTokens(system)
+        val reuseSession = cfg.useSession && client.hasSessionHistory()
 
         // Сжимаем промпт сами: история и список проверенных съедают контекст
         // быстрее всего, а таблицу результатов модель должна видеть целиком.
@@ -528,7 +532,11 @@ class LabRunner(
                 triedLimit = triedLimit,
                 historyLimit = historyLimit
             )
-            promptTokens = systemTokens + PromptBuilder.estimateTokens(user)
+            // В одной сессии system/правила/база уже лежат в истории:
+            // повторно их не отправляем и не считаем как новые токены.
+            val sessionPart = if (cfg.useSession) client.sessionTokens() else 0
+            val systemPart = if (cfg.useSession && sessionPart > 0) 0 else systemTokens
+            promptTokens = systemPart + sessionPart + PromptBuilder.estimateTokens(user)
             if (cfg.contextTokens <= 0) break
             if (promptTokens + cfg.maxTokens <= cfg.contextTokens) break
             if (triedLimit > 8) {
@@ -556,9 +564,16 @@ class LabRunner(
         }
 
         // Полные промпты в лог: по ним можно разобрать поведение модели без повтора запуска.
-        log("──── LLM system prompt (${systemTokens} токенов) ────")
-        log(system)
-        log("──── LLM user prompt ($promptTokens всего с system) ────")
+        if (reuseSession) {
+            log(
+                "──── LLM system prompt: уже в сессии " +
+                    "(история ~${client.sessionTokens()} токенов), повторно не отправляется ────"
+            )
+        } else {
+            log("──── LLM system prompt (${systemTokens} токенов) ────")
+            log(system)
+        }
+        log("──── LLM user prompt ($promptTokens всего) ────")
         log(user)
 
         val text = try {
@@ -576,14 +591,15 @@ class LabRunner(
         if (!analysis.hasPayload()) {
             // Небольшие модели иногда отвечают прозой или ломают JSON — один повтор.
             log("Модель ответила не по формату — повторяю запрос с жёстким требованием JSON")
+            val correction = "ВАЖНО: ответь ТОЛЬКО валидным JSON по схеме выше, " +
+                "без markdown, пояснений и текста до/после."
             val retry = runCatching {
                 withContext(Dispatchers.IO) {
-                    client.chat(
-                        system,
-                        user + "\n\nВАЖНО: ответь ТОЛЬКО валидным JSON по схеме выше, " +
-                            "без markdown, пояснений и текста до/после.",
-                        cfg.maxTokens
-                    )
+                    if (cfg.useSession) {
+                        client.followUp(correction, cfg.maxTokens)
+                    } else {
+                        client.chat(system, user + "\n\n" + correction, cfg.maxTokens)
+                    }
                 }
             }.getOrNull()
             if (retry != null) {
@@ -684,6 +700,14 @@ class LabRunner(
                     if (p.isEmpty()) "по умолчанию" else "~${PromptBuilder.estimateTokens(p)} токенов"
                 } else {
                     "не отправляется"
+                }
+        )
+        log(
+            "Режим LLM: " +
+                if (cfg.useSession) {
+                    "одна сессия — system, правила и база отправляются один раз"
+                } else {
+                    "каждый запрос отдельно"
                 }
         )
         log(
