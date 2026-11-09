@@ -17,74 +17,41 @@ object PromptBuilder {
     /** Default knowledge base: can be edited on the lab screen. */
     fun defaultKnowledge(): String = DEFAULT_KB.trim()
 
-    /** Get the system prompt without the output format specification */
-    fun system(knowledgeBase: String = "", useKnowledge: Boolean = false, customSystemPrompt: String = ""): String {
-        val kb = knowledgeBase.trim()
-        return buildString {
-            append(CORE.trim())
-            if (useKnowledge && kb.isNotEmpty()) {
-                append("\n\n=== KNOWLEDGE BASE (editable) ===\n")
-                append(kb)
-            }
-            // Добавляем пользовательский системный промпт, если он задан
-            if (customSystemPrompt.isNotBlank()) {
-                append("\n\n=== CUSTOM SYSTEM PROMPT ===\n")
-                append(customSystemPrompt)
-            }
-            append("\n\n")
-            // Оставляем только основные правила без спецификации формата ответа
-            append(SYSTEM_RULES.trim())
-        }
-    }
+    /** Default system prompt shown in the lab editor (without the JSON format block). */
+    fun defaultSystemPrompt(): String = CORE.trim()
 
-    /** Get the current system prompt with output format specification for reference */
-    fun systemWithOutputFormat(knowledgeBase: String = "", useKnowledge: Boolean = false, customSystemPrompt: String = ""): String {
+    /** JSON response format: always appended so the answer stays parseable. */
+    fun responseFormat(): String = OUTPUT.trim()
+
+    /**
+     * System message: editable prompt + optional knowledge base + JSON format.
+     *
+     * When [useSystemPrompt] is false the editable rules are not sent at all,
+     * but the response format is kept so parsing keeps working.
+     */
+    fun system(
+        knowledgeBase: String = "",
+        useKnowledge: Boolean = false,
+        systemPrompt: String = "",
+        useSystemPrompt: Boolean = true
+    ): String {
         val kb = knowledgeBase.trim()
+        val base = if (useSystemPrompt) {
+            systemPrompt.trim().ifEmpty { CORE.trim() }
+        } else {
+            ""
+        }
         return buildString {
-            append(CORE.trim())
+            if (base.isNotEmpty()) append(base)
             if (useKnowledge && kb.isNotEmpty()) {
-                append("\n\n=== KNOWLEDGE BASE (editable) ===\n")
+                if (base.isNotEmpty()) append("\n\n")
+                append("=== KNOWLEDGE BASE (editable) ===\n")
                 append(kb)
-            }
-            // Добавляем пользовательский системный промпт, если он задан
-            if (customSystemPrompt.isNotBlank()) {
-                append("\n\n=== CUSTOM SYSTEM PROMPT ===\n")
-                append(customSystemPrompt)
             }
             append("\n\n")
             append(OUTPUT.trim())
         }
     }
-
-    private val SYSTEM_RULES = """
-=== RESPONSE FORMAT ===
-Return exactly one JSON object with the following structure:
-{
-  "summary": "1–2 sentences: what the round showed",
-  "data_quality": "sufficient|low|insufficient: why",
-  "arg_findings": [
-    {"arg": "-r-5+se", "effect": "positive|negative|neutral|unknown",
-     "confidence": "low|medium|high",
-     "evidence": "sites 1,3: 2 2 vs 0 0 for baseline"}
-  ],
-  "hypotheses": ["what we assume about DPI behavior"],
-  "next_strategies": [
-    {"args": "-X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1",
-     "why": "which single parameter we test"}
-  ],
-  "next_experiment": "one question that closes the round",
-  "apply_recommendation": "what to apply and when; if too early — say so"
-}
-
-Response rules:
-- All text fields — in Russian, concise.
-- evidence — only site numbers and figures from the request; do not invent.
-- next_strategies — 3–5 (or as many as the request asks), only valid args,
-  without -i/-p; each line unique.
-- Do not recommend applying a strategy that was not tested in this run.
-- No markdown, ```json, comments, or extra fields.
-- If data is scarce: data_quality="insufficient", but still provide next_strategies.
-""".trimIndent()
 
     fun user(
         run: LabRun,
@@ -114,7 +81,7 @@ Response rules:
         // Saves ~2/3 of table volume, critical for local 4B models.
         sb.append("\n## Sites (number = column in results)\n")
         sites.forEachIndexed { i, s ->
-            sb.append(i + 1).append('=').append(short(s))
+            sb.append(i + 1).append('=').append(siteLabel(s))
                 .append(if (i == sites.lastIndex) '\n' else ' ')
         }
 
@@ -138,7 +105,7 @@ Response rules:
         if (dead.isNotEmpty()) {
             sb.append("\nDead sites (0 for all strategies — likely IP/DNS block, ")
                 .append("their failures are not about args): ")
-                .append(dead.joinToString(", ") { "${it.index + 1}=${short(it.value)}" })
+                .append(dead.joinToString(", ") { "${it.index + 1}=${siteLabel(it.value)}" })
                 .append('\n')
         }
 
@@ -240,10 +207,8 @@ Response rules:
         return t.substring(start, end + 1)
     }
 
-    private fun short(site: String): String {
-        val s = site.removePrefix("https://").removePrefix("http://").trimEnd('/')
-        return if (s.length <= 24) s else s.take(21) + "..."
-    }
+    /** Site text for the LLM prompt and logs: keep long URLs intact. */
+    private fun siteLabel(site: String): String = site.trim()
 
     private fun pct(v: Double): String {
         val sign = if (v > 0) "+" else ""

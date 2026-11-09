@@ -362,7 +362,7 @@
 
     <string name="lab_strategies_title">Стартовые стратегии</string>
     <string name="lab_use_base_strategies">Подбор из базы приложения</string>
-    <string name="lab_use_base_strategies_hint">Первый раунд прогоняет встроенный список стратегий (proxytest_strategies.list), затем топ «Кандидатов» уходит в LLM. После запуска топ записывается в поле ниже, а галочка снимается.</string>
+    <string name="lab_use_base_strategies_hint">Первый раунд прогоняет встроенный список стратегий (proxytest_strategies.list, 60 строк), затем топ «Кандидатов» уходит в LLM. Галочка остаётся включённой до следующего запуска.</string>
     <string name="lab_use_own_strategies">Свои стратегии из поля</string>
     <string name="lab_strategies_hint">Синтаксис ciadpi. Победитель на МегаФоне/LTE: -X -I 0.0.0.0 -s1+s -d3+s -o2 -r-5+se -a1. Строки из поля участвуют только при включённом флажке «Свои стратегии».</string>
 
@@ -380,10 +380,13 @@
     <string name="lab_param_response_json">response_format = json_object</string>
     <string name="lab_param_stream">stream (потоковый ответ)</string>
 
+    <string name="lab_system_prompt_title">Системный промпт</string>
+    <string name="lab_system_prompt_use">Отправлять системный промпт</string>
+    <string name="lab_system_prompt_hint">Основные правила для модели: роль, синтаксис ciadpi, диагностика. Схема JSON добавляется автоматически, чтобы ответ оставался разбираемым. Если галочка снята, эти правила не отправляются.</string>
     <string name="lab_kb_title">База знаний для LLM</string>
     <string name="lab_kb_use">Отправлять базу знаний в системном промпте</string>
     <string name="lab_kb_hint">Этот текст добавляется в системное сообщение. Синтаксис, диагностика и схема JSON уже есть в промпте — здесь только наблюдения о твоей сети. Если поле пустое или галочка снята, база не отправляется.</string>
-    <string name="lab_prompt_budget">Промпт: ~%1$d токенов (правила ~%2$d + база ~%3$d) · ответ ≤%4$d · контекст %5$d. Данные раунда добавятся сверху.</string>
+    <string name="lab_prompt_budget">Промпт: ~%1$d токенов (системный ~%2$d + база ~%3$d) · ответ ≤%4$d · контекст %5$d. Данные раунда добавятся сверху.</string>
     <string name="lab_expand_btn">Развернуть</string>
     <string name="lab_reset_btn">Сбросить</string>
     <string name="lab_done_btn">Готово</string>

@@ -34,8 +34,10 @@ data class LabConfig(
     /** Редактируемая база знаний; добавляется в системный промпт. */
     val knowledgeBase: String = "",
     val useKnowledge: Boolean = true,
-    /** Редактируемый системный промпт. */
+    /** Редактируемый системный промпт (отправляется при включённом [useSystemPrompt]). */
     val systemPrompt: String = "",
+    /** Отправлять системный промпт в запросе к LLM. */
+    val useSystemPrompt: Boolean = true,
     /** Необязательные параметры REST API; по умолчанию не отправляются. */
     val llmParams: LlmParams = LlmParams.EMPTY,
     val reuseBaseline: Boolean = true,

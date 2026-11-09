@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class LabLogicTest {
 
@@ -92,6 +93,25 @@ class LabLogicTest {
             assertTrue("bad: $s — ${p.error}", p.ok)
             assertFalse("contains -d 1: $s", p.argv.windowed(2).any { it == listOf("-d", "1") })
         }
+    }
+
+    @Test
+    fun `all bundled strategies are valid`() {
+        val candidates = listOf(
+            File("src/main/assets/proxytest_strategies.list"),
+            File("../app/src/main/assets/proxytest_strategies.list")
+        )
+        val file = candidates.firstOrNull { it.exists() }
+        assertTrue("proxytest_strategies.list not found", file != null)
+        val lines = file!!.readLines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+        assertEquals(60, lines.size)
+        val bad = lines.mapNotNull { line ->
+            val parsed = StrategyArgs.parse(line)
+            if (parsed.ok) null else "$line -> ${parsed.error}"
+        }
+        assertTrue("invalid strategies:\n" + bad.joinToString("\n"), bad.isEmpty())
     }
 
     @Test

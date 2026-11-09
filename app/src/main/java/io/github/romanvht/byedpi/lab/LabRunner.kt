@@ -502,7 +502,12 @@ class LabRunner(
         tried: Collection<String>
     ): LlmAnalysis {
         val client = llm ?: throw IllegalStateException("LLM не настроена")
-        val system = PromptBuilder.system(cfg.knowledgeBase, cfg.useKnowledge, cfg.systemPrompt)
+        val system = PromptBuilder.system(
+            knowledgeBase = cfg.knowledgeBase,
+            useKnowledge = cfg.useKnowledge,
+            systemPrompt = cfg.systemPrompt,
+            useSystemPrompt = cfg.useSystemPrompt
+        )
         val systemTokens = PromptBuilder.estimateTokens(system)
 
         // Сжимаем промпт сами: история и список проверенных съедают контекст
@@ -671,6 +676,15 @@ class LabRunner(
             "Стратегии: база=" + (if (cfg.useBaseStrategies) "${cfg.baseStrategies.size}" else "выкл") +
                 ", свои=" + (if (cfg.useOwnStrategies) "${cfg.strategies.size}" else "выкл") +
                 ", прошлый лучший=да/нет (см. ниже)"
+        )
+        log(
+            "Системный промпт: " +
+                if (cfg.useSystemPrompt) {
+                    val p = cfg.systemPrompt.trim()
+                    if (p.isEmpty()) "по умолчанию" else "~${PromptBuilder.estimateTokens(p)} токенов"
+                } else {
+                    "не отправляется"
+                }
         )
         log(
             "База знаний: " +

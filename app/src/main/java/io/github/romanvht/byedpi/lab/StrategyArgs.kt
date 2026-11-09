@@ -13,14 +13,14 @@ object StrategyArgs {
         val error: String?
     )
 
-    private val POS = Regex("""^-?\d+(?::\d+(?::\d+)?)?(?:\+[shn])?(?:[emrs])?$""")
+    private val POS = Regex("""^-?\d+(?::\d+(?::\d+)?)?(?:\+[shn][a-z]*)?$""")
     private val RANGE = Regex("""^\d+(?:-\d+)?$""")
     private val TIMEOUT = Regex("""^\d+(?:\.\d+)?(?::\d+(?:\.\d+)?){0,3}$""")
 
     private val WITH_ARG = setOf(
         'i', 'p', 'I', 'b', 'c', 'x', 'y', 'u', 'T', 'B', 'K', 'H', 'j', 'V',
         'R', 's', 'd', 'o', 'q', 'f', 't', 'O', 'l', 'Q', 'e', 'M', 'r', 'm',
-        'a', 'g', 'W', 'C'
+        'a', 'g', 'W', 'C', 'A', 'n'
     )
     private val FLAGS = setOf('N', 'X', 'U', 'E', 'F', 'S', 'Y', 'Z', 'D')
     private val FORBIDDEN = setOf('i', 'p', 'D', 'w', 'E', 'B', 'C')

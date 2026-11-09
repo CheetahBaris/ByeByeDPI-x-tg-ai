@@ -83,6 +83,10 @@ class LabActivity : BaseActivity() {
     private lateinit var reuseBaseline: CheckBox
     private lateinit var useKnowledge: CheckBox
     private lateinit var knowledgeBase: EditText
+    private lateinit var useSystemPrompt: CheckBox
+    private lateinit var systemPromptInput: EditText
+    private lateinit var systemPromptExpandBtn: Button
+    private lateinit var systemPromptResetBtn: Button
     private lateinit var promptBudget: TextView
     private lateinit var sitesExpandBtn: Button
     private lateinit var strategiesExpandBtn: Button
@@ -162,8 +166,8 @@ class LabActivity : BaseActivity() {
     private var lastBestStrategy = ""
     private var lastBestScore = 0.0
     private var budgetColor = 0
-    private val basePromptTokens by lazy {
-        PromptBuilder.estimateTokens(PromptBuilder.system())
+    private val formatTokens by lazy {
+        PromptBuilder.estimateTokens(PromptBuilder.responseFormat())
     }
 
     companion object {
@@ -268,6 +272,10 @@ class LabActivity : BaseActivity() {
 
         useKnowledge = findViewById(R.id.labUseKb)
         knowledgeBase = findViewById(R.id.labKb)
+        useSystemPrompt = findViewById(R.id.labUseSystemPrompt)
+        systemPromptInput = findViewById(R.id.labSystemPrompt)
+        systemPromptExpandBtn = findViewById(R.id.labSystemPromptExpandBtn)
+        systemPromptResetBtn = findViewById(R.id.labSystemPromptResetBtn)
         promptBudget = findViewById(R.id.labPromptBudget)
         kbExpandBtn = findViewById(R.id.labKbExpandBtn)
         kbResetBtn = findViewById(R.id.labKbResetBtn)
@@ -320,11 +328,20 @@ class LabActivity : BaseActivity() {
             knowledgeBase.setText(PromptBuilder.defaultKnowledge())
             updatePromptBudget()
         }
+        systemPromptExpandBtn.setOnClickListener {
+            showFullscreenEditor(getString(R.string.lab_system_prompt_title), systemPromptInput)
+        }
+        systemPromptResetBtn.setOnClickListener {
+            systemPromptInput.setText(PromptBuilder.defaultSystemPrompt())
+            updatePromptBudget()
+        }
         logExpandBtn.setOnClickListener {
             showFullscreenText(getString(R.string.lab_log_title), logView.text.toString())
         }
         useKnowledge.setOnCheckedChangeListener { _, _ -> updatePromptBudget() }
         knowledgeBase.doAfterTextChanged { updatePromptBudget() }
+        useSystemPrompt.setOnCheckedChangeListener { _, _ -> updateSystemPromptEnabled() }
+        systemPromptInput.doAfterTextChanged { updatePromptBudget() }
         maxTokens.doAfterTextChanged { updatePromptBudget() }
         contextTokens.doAfterTextChanged { updatePromptBudget() }
 
@@ -594,11 +611,7 @@ class LabActivity : BaseActivity() {
         } else {
             emptyList()
         }
-        val baseStrategies = if (useBaseStrategies.isChecked) {
-            val loaded = loadBaseStrategies()
-            println("Загружено стратегий из базы: ${loaded.size}")
-            loaded
-        } else emptyList()
+        val baseStrategies = if (useBaseStrategies.isChecked) loadBaseStrategies() else emptyList()
 
         val cfg = LabConfig(
             baseUrl = url,
@@ -625,6 +638,12 @@ class LabActivity : BaseActivity() {
             llmTimeoutSec = number(llmTimeout, 300, 10, 1800),
             knowledgeBase = if (useKnowledge.isChecked) knowledgeBase.text.toString() else "",
             useKnowledge = useKnowledge.isChecked,
+            systemPrompt = if (useSystemPrompt.isChecked) {
+                systemPromptInput.text.toString().trim()
+            } else {
+                ""
+            },
+            useSystemPrompt = useSystemPrompt.isChecked,
             llmParams = collectLlmParams(),
             reuseBaseline = reuseBaseline.isChecked,
             autoApply = autoApply.isChecked,
@@ -690,23 +709,6 @@ class LabActivity : BaseActivity() {
         status.text = "Готово: ${pct(result.bestScore)} • ${result.rounds} раунд(ов)"
         notifyLab("Готово: ${pct(result.bestScore)}", 100, false, ongoing = false)
 
-        // Топ запуска записываем в поле «Стартовые стратегии»: следующий запуск
-        // не повторяет базовый перебор, а дорабатывает уже найденное.
-        if (lastCfg?.useBaseStrategies == true && result.topStrategies.isNotEmpty()) {
-            strategies.setText(result.topStrategies.joinToString("\n"))
-            useOwnStrategies.isChecked = true
-            useBaseStrategies.isChecked = false
-            prefs.edit {
-                putString("strategies", strategies.text.toString())
-                putBoolean("use_own_strategies", true)
-                putBoolean("use_base_strategies", false)
-            }
-            appendLog(
-                "Топ-${result.topStrategies.size} записан в «Стартовые стратегии». " +
-                    "«Подбор из базы» снят, «Свои стратегии» включены."
-            )
-        }
-
         if (result.bestStrategy.isNotBlank()) {
             bestView.text = "Лучшая: ${pct(result.bestScore)} • ${result.bestStrategy}"
             appendLog(
@@ -720,7 +722,7 @@ class LabActivity : BaseActivity() {
                     "Лучшая стратегия (${pct(result.bestScore)}):\n\n" +
                         result.bestStrategy +
                         "\n\nПричина остановки: " + result.stopReason +
-                        "\n\nТоп стратегий записан в «Стартовые стратегии»."
+                        "\n\nОтчёт с топом стратегий доступен по кнопке «Отчёт»."
                 )
                 .setPositiveButton("Применить") { _, _ -> confirmApply(result.bestStrategy) }
                 .setNeutralButton(R.string.lab_report_btn) { _, _ -> showLogs() }
@@ -1099,25 +1101,41 @@ class LabActivity : BaseActivity() {
         }
     }
 
+    private fun updateSystemPromptEnabled() {
+        if (!::systemPromptInput.isInitialized) return
+        val on = useSystemPrompt.isChecked
+        systemPromptInput.isEnabled = on
+        if (::systemPromptExpandBtn.isInitialized) systemPromptExpandBtn.isEnabled = on
+        if (::systemPromptResetBtn.isInitialized) systemPromptResetBtn.isEnabled = on
+        updatePromptBudget()
+    }
+
     private fun updatePromptBudget() {
         if (!::promptBudget.isInitialized) return
         if (budgetColor == 0) budgetColor = promptBudget.currentTextColor
+        val systemText = if (useSystemPrompt.isChecked) {
+            systemPromptInput.text.toString().trim()
+                .ifEmpty { PromptBuilder.defaultSystemPrompt() }
+        } else {
+            ""
+        }
+        val systemTokens = if (systemText.isEmpty()) 0 else PromptBuilder.estimateTokens(systemText)
         val useKb = useKnowledge.isChecked
         val kb = if (useKb) knowledgeBase.text.toString().trim() else ""
         val kbTokens = if (kb.isEmpty()) 0 else PromptBuilder.estimateTokens(kb)
-        val systemTokens = basePromptTokens + kbTokens
+        val promptTokens = formatTokens + systemTokens + kbTokens
         val answer = number(maxTokens, 1200, 200, 8000)
         val context = number(contextTokens, 8192, 0, 131072)
         promptBudget.text = getString(
             R.string.lab_prompt_budget,
+            promptTokens,
             systemTokens,
-            basePromptTokens,
             kbTokens,
             answer,
             context
         )
         promptBudget.setTextColor(
-            if (context > 0 && systemTokens + answer > context) {
+            if (context > 0 && promptTokens + answer > context) {
                 0xFFD32F2F.toInt()
             } else {
                 budgetColor
@@ -1277,6 +1295,11 @@ class LabActivity : BaseActivity() {
         knowledgeBase.setText(
             prefs.getString("knowledge_base", null) ?: PromptBuilder.defaultKnowledge()
         )
+        useSystemPrompt.isChecked = prefs.getBoolean("use_system_prompt", true)
+        systemPromptInput.setText(
+            prefs.getString("system_prompt", null) ?: PromptBuilder.defaultSystemPrompt()
+        )
+        updateSystemPromptEnabled()
 
         select(
             scanModeSpinner, scanOptions,
@@ -1303,6 +1326,16 @@ class LabActivity : BaseActivity() {
             prefs.edit { putBoolean("sites_v2", true) }
         } else {
             sites.setText(prefs.getString("sites", ""))
+        }
+        // Раньше после базового прогона приложение само записывало топ в свои
+        // стратегии и снимало галочку базы. Из-за этого следующий запуск шёл
+        // не по всем 60 строкам proxytest_strategies.list. Возвращаем базу.
+        if (!prefs.getBoolean("base_strategies_autoswitch_fixed", false)) {
+            prefs.edit {
+                putBoolean("use_base_strategies", true)
+                putBoolean("use_own_strategies", false)
+                putBoolean("base_strategies_autoswitch_fixed", true)
+            }
         }
         strategies.setText(prefs.getString("strategies", ""))
 
@@ -1359,6 +1392,8 @@ class LabActivity : BaseActivity() {
             putBoolean("reuse_baseline", reuseBaseline.isChecked)
             putBoolean("use_knowledge", useKnowledge.isChecked)
             putString("knowledge_base", knowledgeBase.text.toString())
+            putBoolean("use_system_prompt", useSystemPrompt.isChecked)
+            putString("system_prompt", systemPromptInput.text.toString())
             putString("scan_mode", selected(scanModeSpinner, scanOptions, ScanMode.BOTH).name)
             putString("llm_net", selected(llmNetSpinner, llmOptions, NetTarget.AUTO).name)
             putString("test_net", selected(testNetSpinner, testOptions, NetTarget.SYSTEM).name)
@@ -1449,7 +1484,8 @@ class LabActivity : BaseActivity() {
         else -> file.removeSuffix(".sites").removePrefix("proxytest_")
     }
 
-    private fun loadBaseStrategies(): List<String> = siteLines(readAsset("proxytest_strategies.list"))
+    private fun loadBaseStrategies(): List<String> =
+        siteLines(readAsset("proxytest_strategies.list"))
 
     // ------------------------------------------------------------------ утилиты
 
