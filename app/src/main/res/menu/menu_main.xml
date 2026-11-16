@@ -5,6 +5,12 @@
     tools:context=".activities.MainActivity">
 
     <item
+        android:id="@+id/action_ai_lab"
+        android:orderInCategory="0"
+        android:title="@string/ai_lab"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_diagnostics"
         android:orderInCategory="1"
         android:title="@string/diagnostics"
