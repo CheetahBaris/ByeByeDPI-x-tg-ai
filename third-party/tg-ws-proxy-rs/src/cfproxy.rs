@@ -1,5 +1,5 @@
 use crate::config::*;
-use crate::ws::{is_http_status_error, ws_connect_once, RawWebSocket, WsError};
+use crate::ws::{is_http_status_error, ws_connect_once, ws_connect_once_sni, RawWebSocket, WsError};
 use crate::{ldebug, lerror, linfo, lwarn};
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -71,6 +71,10 @@ pub fn merge_cfproxy_domains(lists: &[Vec<String>]) -> Vec<String> {
         for raw in list {
             let d = normalize_cf_domain(raw);
             if d.is_empty() || seen.contains(&d) {
+                continue;
+            }
+            // Дополнительно валидируем как в _normalize_domain_pool оригинала.
+            if !crate::config::is_valid_domain(&d) {
                 continue;
             }
             seen.insert(d.clone());
@@ -294,18 +298,28 @@ pub fn init_cfproxy_domains() {
 }
 
 pub fn start_cfproxy_refresh() {
+    // Порт proxy/config.py::start_cfproxy_domain_refresh: сначала пробуем
+    // обновить сразу (до 3 попыток), затем раз в час фоновым таском.
+    // На мобиле уважаем свежесть дискового кеша для первой попытки.
     if !should_refresh_cfproxy_domains() {
-        ldebug!(" CF: кеш свежий, пропускаю обновление списка");
-        return;
+        ldebug!(" CF: кеш свежий, откладываю обновление списка на час");
     }
     tokio::spawn(async move {
-        for _ in 0..3 {
-            if try_refresh_cfproxy_domains().await {
-                return;
+        if should_refresh_cfproxy_domains() {
+            for _ in 0..3 {
+                if try_refresh_cfproxy_domains().await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(10)).await;
             }
-            tokio::time::sleep(Duration::from_secs(10)).await;
+            if CFPROXY.read().domains.is_empty() {
+                ldebug!(" CF: обновить список доменов не удалось, остаюсь на кеше/встроенном списке");
+            }
         }
-        ldebug!(" CF: обновить список доменов не удалось, остаюсь на кеше/встроенном списке");
+        loop {
+            tokio::time::sleep(CFPROXY_REFRESH_INTERVAL).await;
+            try_refresh_cfproxy_domains().await;
+        }
     });
 }
 
@@ -323,9 +337,18 @@ pub async fn try_refresh_cfproxy_domains() -> bool {
         Err(_) => return false,
     };
 
+    // Cache-buster как в оригинале ("?" + 7 случайных букв), UA tg-ws-proxy.
+    let nonce: String = {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        (0..7)
+            .map(|_| rng.gen_range(b'a'..=b'z') as char)
+            .collect()
+    };
+    let url = format!("{}?{}", CFPROXY_DOMAINS_URL, nonce);
     let resp = match client
-        .get(CFPROXY_DOMAINS_URL)
-        .header("User-Agent", "Mozilla/5.0 tg-ws-proxy-android")
+        .get(&url)
+        .header("User-Agent", "tg-ws-proxy")
         .send()
         .await
     {
@@ -347,20 +370,21 @@ pub async fn try_refresh_cfproxy_domains() -> bool {
         }
     };
 
-    let mut new_domains = Vec::new();
+    let mut fetched_raw = Vec::new();
     for line in body.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let d = normalize_cf_domain(line);
-        if !d.is_empty() {
-            new_domains.push(d);
-        }
+        fetched_raw.push(line.to_string());
     }
 
-    if !new_domains.is_empty() {
-        let merged = merge_cfproxy_domains(&[new_domains.clone(), default_cfproxy_domains()]);
+    // Валидация пула как в оригинале: минимум CFPROXY_MIN_VALID_DOMAINS
+    // валидных доменов, иначе игнорируем payload и остаёмся на текущем пуле.
+    let decoded: Vec<String> = fetched_raw.iter().map(|d| normalize_cf_domain(d)).collect();
+    let pool = normalize_domain_pool(&decoded);
+    if pool.len() >= CFPROXY_MIN_VALID_DOMAINS {
+        let merged = merge_cfproxy_domains(&[pool.clone(), default_cfproxy_domains()]);
         {
             let mut cfg = CFPROXY.write();
             if !cfg.user_domain.is_empty() {
@@ -370,8 +394,19 @@ pub async fn try_refresh_cfproxy_domains() -> bool {
         }
         crate::balancer::BALANCER.write().update_domains_list(&merged);
         save_cfproxy_domains_to_cache(&merged);
-        linfo!(" CF: список доменов обновлен ({} шт.)", new_domains.len());
+        linfo!(" CF: список доменов обновлен ({} шт.)", pool.len());
         return true;
+    }
+
+    if !fetched_raw.is_empty() {
+        lwarn!(
+            " CF: игнорирую список доменов (total={}, valid={}, need>={}); остаюсь на текущем пуле",
+            fetched_raw.len(),
+            pool.len(),
+            CFPROXY_MIN_VALID_DOMAINS
+        );
+    } else {
+        ldebug!(" CF: обновить список доменов не удалось (пустой ответ), остаюсь на кеше/встроенном списке");
     }
     false
 }
@@ -544,6 +579,7 @@ pub async fn cf_connect_domain(
     domain: &str,
     path: &str,
     timeout: f64,
+    tls_name: Option<&str>,
 ) -> (Option<RawWebSocket>, String, Option<WsError>) {
     let path = if path.is_empty() { "/apiws" } else { path };
 
@@ -554,7 +590,11 @@ pub async fn cf_connect_domain(
     }
 
     let host_timeout = new_timed_attempt_timeout(phase_timeout, phase_timeout);
-    match ws_connect_once(domain, domain, path, host_timeout).await {
+    let host_attempt = match tls_name {
+        Some(name) => ws_connect_once_sni(domain, domain, path, host_timeout, name).await,
+        None => ws_connect_once(domain, domain, path, host_timeout).await,
+    };
+    match host_attempt {
         Ok(ws) => return (Some(ws), String::new(), None),
         Err(host_err) => {
             if is_http_status_error(&host_err, 429) {
@@ -567,7 +607,13 @@ pub async fn cf_connect_domain(
             }
             ldebug!(" CF DNS {} -> {}", domain, resolved_ip);
             let ip_timeout = new_timed_attempt_timeout(phase_timeout, phase_timeout);
-            match ws_connect_once(&resolved_ip, domain, path, ip_timeout).await {
+            let ip_attempt = match tls_name {
+                Some(name) => {
+                    ws_connect_once_sni(&resolved_ip, domain, path, ip_timeout, name).await
+                }
+                None => ws_connect_once(&resolved_ip, domain, path, ip_timeout).await,
+            };
+            match ip_attempt {
                 Ok(ws) => (Some(ws), resolved_ip, None),
                 Err(e) => (None, resolved_ip, Some(e)),
             }

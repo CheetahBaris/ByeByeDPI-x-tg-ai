@@ -60,14 +60,21 @@ class EwenloyTgWsServiceExtension {
         this.preferences = preferences
         val nowEnabled = preferences.getBoolean(EWENLOY_TG_WS_MODE_KEY, false)
         if (!nowEnabled) { if (isRunning()) stop(); return }
-        if (!isRunning()) start(preferences) else stop().also { start(preferences) }
+        if (!isRunning()) start(preferences) else stop(clearPreference = false).also { start(preferences) }
     }
 
-    fun stop() {
+    fun stop(clearPreference: Boolean = true) {
         val ctx = context ?: return
         ctx.startService(Intent(ctx, TgWsProxyService::class.java).apply {
             action = TgWsProxyService.ACTION_STOP
         })
+        // Гасим и флаг «включено»: иначе кнопка на главном остаётся зелёной,
+        // а BootReceiver поднимает прокси после перезагрузки против воли юзера.
+        // При внутреннем перезапуске (refreshFromPreferences) флаг не трогаем.
+        if (clearPreference) {
+            preferences?.edit(commit = true) { putBoolean(EWENLOY_TG_WS_MODE_KEY, false) }
+            enabled = false
+        }
         writeStatus(TG_STATUS_DISABLED)
         Log.i(TAG, "TgWsProxyService stop requested")
     }
@@ -95,17 +102,6 @@ class EwenloyTgWsServiceExtension {
     fun isRunning() = TgWsProxyService.isRunning.value
 
     // ---- helpers ----
-
-    private fun ensureSecret(prefs: SharedPreferences): String {
-        val existing = prefs.getString(PREF_SECRET_KEY, "")?.trim() ?: ""
-        if (existing.length == 32 && existing.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' })
-            return existing
-        val generated = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
-            .joinToString("") { "%02x".format(it) }
-        prefs.edit(commit = true) { putString(PREF_SECRET_KEY, generated) }
-        Log.i(TAG, "Generated new MTProto secret")
-        return generated
-    }
 
     private fun buildDcIps(prefs: SharedPreferences): String {
         if (prefs.getBoolean(PREF_CF_ENABLED, true)) return ""
@@ -138,6 +134,18 @@ class EwenloyTgWsServiceExtension {
     companion object {
         private const val TAG = "EwenloyTgWsExt"
         const val TG_WS_PORT = 1082
+
+        /** Секрет MTProto: существующий 32-символьный hex или новый. */
+        fun ensureSecret(prefs: SharedPreferences): String {
+            val existing = prefs.getString(PREF_SECRET_KEY, "")?.trim() ?: ""
+            if (existing.length == 32 && existing.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' })
+                return existing
+            val generated = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+                .joinToString("") { "%02x".format(it) }
+            prefs.edit(commit = true) { putString(PREF_SECRET_KEY, generated) }
+            Log.i(TAG, "Generated new MTProto secret")
+            return generated
+        }
 
         const val EWENLOY_TG_WS_MODE_KEY       = "ewenloy_tg_ws_mode_enabled"
         const val EWENLOY_TG_RUNTIME_STATUS_KEY = "ewenloy_tg_runtime_status"

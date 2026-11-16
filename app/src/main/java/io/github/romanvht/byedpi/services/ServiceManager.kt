@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import io.github.romanvht.byedpi.R
 import io.github.romanvht.byedpi.data.*
+import io.github.romanvht.byedpi.utility.RuntimeNotification
 import io.github.romanvht.byedpi.utility.createPauseNotification
 import io.github.romanvht.byedpi.utility.registerNotificationChannel
 import kotlinx.coroutines.*
@@ -199,10 +200,8 @@ object ServiceManager {
         if (running == null) {
             app.stopService(Intent(app, ByeDpiVpnService::class.java))
             app.stopService(Intent(app, ByeDpiProxyService::class.java))
-            val notifications = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notifications.cancel(ByeDpiVpnService.FOREGROUND_SERVICE_ID)
-            notifications.cancel(ByeDpiProxyService.FOREGROUND_SERVICE_ID)
             if (appStatus.first != AppStatus.Halted) publish(appStatus.second, AppStatus.Halted, STOPPED_BROADCAST)
+            RuntimeNotification.sync(app)
             return
         }
         val current = Session(running.first, NativeEngine(app, running.first, running.second))
@@ -284,6 +283,8 @@ object ServiceManager {
         val sender = if (mode == Mode.VPN) Sender.VPN else Sender.Proxy
         application?.let {
             it.sendBroadcast(Intent(action).setPackage(it.packageName).putExtra(SENDER, sender.ordinal))
+            // Карточка в шторке должна менять кнопки сразу, а не ждать следующего тика
+            RuntimeNotification.sync(it)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) QuickTileService.updateTile()
     }

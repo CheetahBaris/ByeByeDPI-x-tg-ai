@@ -49,6 +49,7 @@ class MainActivity : BaseActivity() {
             if (isFinishing) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed) return
             updateTgWsStatus()
+            updateTgWsToggleButton()
             tgWsStatusHandler.postDelayed(this, 1500)
         }
     }
@@ -247,30 +248,20 @@ class MainActivity : BaseActivity() {
         }
 
         binding.tgProxyButton?.setOnClickListener {
-            val prefs = getPreferences()
-            val tgWsEnabled = prefs.getBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, false)
-            if (tgWsEnabled) {
-                val port = EwenloyTgWsServiceExtension.TG_WS_PORT
-                val secretKey = prefs.getString(EwenloyTgWsServiceExtension.PREF_SECRET_KEY, "") ?: ""
-                val secret = if (secretKey.isEmpty()) "00000000000000000000000000000000" else secretKey
-                val url = "https://t.me/proxy?server=127.0.0.1&port=$port&secret=dd$secret"
-                applyToTelegramPackages(url)
-            } else {
-                val port = prefs.getString("byedpi_proxy_port", "1080") ?: "1080"
-                val tgUri = android.net.Uri.parse("tg://socks?server=127.0.0.1&port=$port")
-                startActivity(Intent(Intent.ACTION_VIEW, tgUri))
-            }
+            TelegramProxyLink.open(this, getPreferences())
         }
 
         binding.tgWsToggleButton?.setOnClickListener {
             val prefs = getPreferences()
-            val current = prefs.getBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, false)
-            prefs.edit().putBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, !current).apply()
+            // Источник правды — живой сервис, а не преф: остановку могли сделать
+            // из шторки или плитки, и тогда преф уже рассинхронизирован.
+            val running = TgWsProxyService.isRunning.value
+            prefs.edit().putBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, !running).apply()
             updateTgWsToggleButton()
             // Независимое управление: TG WS прокси стартует/останавливается сам,
             // независимо от состояния основного ByeDPI-сервиса
             tgWsExt.initialize(this, prefs)
-            if (!current) {
+            if (!running) {
                 tgWsExt.start(prefs)
                 Toast.makeText(this, R.string.tg_ws_toggle_btn, Toast.LENGTH_SHORT).show()
             } else {
@@ -357,15 +348,9 @@ class MainActivity : BaseActivity() {
                 true
             }
 
+            // logcat export is useless on OEM builds (only our own process is visible):
+            // open our file log with app events + native core log instead
             R.id.action_save_logs -> {
-                val intent = Intent(this, FileActivity::class.java)
-                intent.putExtra(FileActivity.EXTRA_MODE, FileActivity.MODE_CREATE)
-                intent.putExtra(FileActivity.EXTRA_TYPE, FileActivity.TYPE_LOGS)
-                logsRegister.launch(intent)
-                true
-            }
-
-            R.id.action_tg_ws_logs -> {
                 startActivity(Intent(this, TgWsLogsActivity::class.java))
                 true
             }
@@ -652,10 +637,12 @@ class MainActivity : BaseActivity() {
     }
 
     private fun updateTgWsToggleButton() {
-        val enabled = getPreferences().getBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, false)
+        // Зелёный = прокси реально работает. Раньше цвет брался из префа
+        // «включено», поэтому после остановки из шторки/плитки кнопка оставалась зелёной.
+        val running = TgWsProxyService.isRunning.value
         val btn = binding.tgWsToggleButton
         val icon = binding.tgWsToggleIcon
-        if (enabled) {
+        if (running) {
             btn.setCardBackgroundColor(ContextCompat.getColor(this, R.color.green_active))
             icon.setColorFilter(ContextCompat.getColor(this, android.R.color.white))
         } else {
@@ -663,43 +650,6 @@ class MainActivity : BaseActivity() {
             theme.resolveAttribute(com.google.android.material.R.attr.colorSurface, typedValue, true)
             btn.setCardBackgroundColor(typedValue.data)
             icon.clearColorFilter()
-        }
-    }
-
-    private fun applyToTelegramPackages(url: String) {
-        val packages = listOf(
-            "org.telegram.messenger", "com.radolyn.ayugram", "com.exteragram.messenger",
-            "org.telegram.plus", "ir.ilmili.telegraph", "org.telegram.BifToGram",
-            "tw.nekomimi.nekogram", "xyz.nextalone.nagram", "uz.unnarsx.cherrygram",
-            "org.telegram.mdgram", "org.forkclient.messenger.beta", "app.nicegram",
-            "top.qwq2333.nullgram", "com.iMe.android", "ru.dahl.messenger",
-            "com.scriptsaz.litegram", "org.thunderdog.challegram"
-        )
-        val pm = packageManager
-        val available = packages.filter {
-            pm.getLaunchIntentForPackage(it) != null
-        }
-        if (available.isEmpty()) {
-            Toast.makeText(this, R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-            return
-        }
-        val intents = available.map { pkg ->
-            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply { setPackage(pkg) }
-        }
-        if (intents.size == 1) {
-            try {
-                startActivity(intents.first().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } catch (e: Exception) {
-                Toast.makeText(this, R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            val chooser = Intent.createChooser(intents.first(), getString(R.string.ewenloy_tg_choose_client))
-            chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, intents.drop(1).toTypedArray())
-            try {
-                startActivity(chooser)
-            } catch (e: Exception) {
-                Toast.makeText(this, R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-            }
         }
     }
 }

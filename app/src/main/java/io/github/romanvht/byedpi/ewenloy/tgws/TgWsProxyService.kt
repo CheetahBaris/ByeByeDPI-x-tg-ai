@@ -10,23 +10,31 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import io.github.romanvht.byedpi.R
 import io.github.romanvht.byedpi.activities.MainActivity
+import io.github.romanvht.byedpi.services.QuickTileService
+import io.github.romanvht.byedpi.utility.RuntimeNotification
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import android.content.SharedPreferences
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import androidx.preference.PreferenceManager
 
 class TgWsProxyService : Service() {
 
-    private var wakeLock: PowerManager.WakeLock? = null
     private var statsJob: Job? = null
+    private var healthJob: Job? = null
     private var restartJob: Job? = null
     private var lastNotificationContent: String = ""
     private var lastNotificationAtMs: Long = 0L
@@ -36,10 +44,18 @@ class TgWsProxyService : Service() {
     // Счётчик подряд неудачных стартов натива для авто-рестарта
     @Volatile
     private var autoRestartAttempts = 0
+    // Health-check: сколько раз ядро не отвечало на порту и сколько было перезапусков
+    @Volatile
+    private var healthRestarts = 0
+    @Volatile
+    private var lastTcpFallbackStat = 0L
+    private var networkRegisteredAtMs = 0L
+    private var lastNetworkRestartMs = 0L
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     // Отдельный scope для остановки: НЕ отменяется в onDestroy(),
     // иначе stopForeground()/stopSelf() не выполнятся и уведомление зависнет
     private val stopScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     // Saved intent extras for restart on kill / onTaskRemoved
     private var lastBindIp: String = "127.0.0.1"
@@ -64,17 +80,10 @@ class TgWsProxyService : Service() {
         const val EXTRA_CFPROXY_DOMAIN = "EXTRA_CFPROXY_DOMAIN"
         const val EXTRA_SECRET_KEY = "EXTRA_SECRET_KEY"
         
-        private const val NOTIFICATION_ID = 101
         private const val CHANNEL_ID = "TG_WS_Proxy_Service_v4"
         private const val TAG = "ProxyService"
 
-        // Wakelock refresh interval (25 min, re-acquire before 30-min timeout)
-        private const val WAKELOCK_TIMEOUT_MS = 30L * 60 * 1000
-        private const val WAKELOCK_REFRESH_MS = 25L * 60 * 1000
-
         // Stats/notification update interval.
-        // Relaxed on purpose: each tick runs while a partial wakelock is held,
-        // so 10s keeps the traffic info fresh without draining the battery.
         private const val STATS_UPDATE_MS = 10_000L
         private const val NOTIFICATION_MIN_UPDATE_MS = 10_000L
         private const val NATIVE_STOP_WAIT_MS = 3_000L
@@ -82,6 +91,13 @@ class TgWsProxyService : Service() {
         // Авто-рестарт натива при неожиданном падении/неудачном старте
         private const val MAX_AUTO_RESTARTS = 3
         private const val AUTO_RESTART_DELAY_MS = 2_000L
+        private const val MAX_HEALTH_FAILURES = 3
+        private const val MAX_HEALTH_RESTARTS = 6
+        private const val NETWORK_IGNORE_MS = 15_000L
+        private const val NETWORK_DEBOUNCE_MS = 30_000L
+        private const val HEARTBEAT_MS = 60_000L
+        private const val HEALTH_CHECK_MS = 5_000L
+        private const val PORT_PROBE_TIMEOUT_MS = 1500
 
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning
@@ -96,14 +112,22 @@ class TgWsProxyService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        LogManager.startListening(this)
+        LogManager.app(
+            "service: onCreate | " + io.github.romanvht.byedpi.BuildConfig.VERSION_NAME +
+                " (" + io.github.romanvht.byedpi.BuildConfig.VERSION_CODE + ") | " +
+                io.github.romanvht.byedpi.BuildConfig.BUILD_STAMP
+        )
+        registerNetworkCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
                 autoRestartAttempts = 0
-                LogManager.clearLogs()
-                LogManager.startListening()
+                healthRestarts = 0
+                LogManager.startListening(this)
+                LogManager.app("START: запрос запуска прокси")
                 val bindIp = intent.getStringExtra(EXTRA_BIND_IP) ?: "127.0.0.1"
                 val port = intent.getIntExtra(EXTRA_PORT, 1443)
                 val ips = intent.getStringExtra(EXTRA_IPS) ?: ""
@@ -170,18 +194,11 @@ class TgWsProxyService : Service() {
         lastNotificationAtMs = notificationStartedAtMs
         _lastTraffic.value = null
 
-        val notification = createNotification(lastNotificationContent)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        showNotification(lastNotificationContent)
+        registerNetworkCallback()
+        LogManager.app("start: поднимаю ядро на $bindIp:$port (pool=$poolSize, cf=$cfEnabled)")
+        startHealthJob()
 
-        acquireWakeLock()
         stopInProgress = false
         
         // Start Go proxy in a separate thread with error handling
@@ -201,6 +218,10 @@ class TgWsProxyService : Service() {
                 NativeProxy.setPoolSize(poolSize)
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
+                // Явно требуем TLS: у апстрима флаг «no secure» по умолчанию включён,
+                // и ядро ходило к Cloudflare по плейн-HTTP на 80 — такое рвётся DPI
+                // за десятки секунд (в логах: "upstream: ws_close" через 36-40 с).
+                NativeProxy.setDisableSecure(false)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
                 if (result == 0) {
                     autoRestartAttempts = 0
@@ -208,18 +229,24 @@ class TgWsProxyService : Service() {
                         if (!stopInProgress) {
                             updateRunningState(true)
                             _isVerifiedRunning.value = true
+                            PreferenceManager.getDefaultSharedPreferences(this@TgWsProxyService).edit()
+                                .putString(EwenloyTgWsServiceExtension.EWENLOY_TG_RUNTIME_STATUS_KEY, EwenloyTgWsServiceExtension.TG_STATUS_IDLE)
+                                .apply()
                             updateNotification(getString(R.string.notification_running), force = true)
                             Log.i(TAG, "Proxy ready: listening on port $port")
+                            LogManager.app("start: ядро готово, слушает $port")
                         }
                     }
                 } else {
                     Log.e(TAG, "StartProxy returned error code: $result")
+                    LogManager.app("start: ошибка старта, код $result", error = true)
                     scheduleAutoRestartOrStop(
                         getString(R.string.notification_start_error_code, result)
                     )
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start proxy via JNA", e)
+                LogManager.app("start: исключение ${e.message}", error = true)
                 scheduleAutoRestartOrStop(
                     getString(R.string.notification_error, e.message ?: "")
                 )
@@ -233,19 +260,26 @@ class TgWsProxyService : Service() {
         // Stats updater. Notification updates are throttled so the system keeps
         // a stable foreground entry instead of constantly reordering it.
         statsJob = serviceScope.launch {
-            // WakeLock refresh sub-job: re-acquire before system timeout
-            launch {
-                while (isActive) {
-                    delay(WAKELOCK_REFRESH_MS)
-                    refreshWakeLock()
-                }
-            }
-
+            // Начальная задержка: даём нативу 3 секунды на разогрев пула
+            delay(3_000L)
+            var consecutiveHealthFailures = 0
             while (isActive) {
                 delay(STATS_UPDATE_MS)
                 if (_isRunning.value && !stopInProgress) {
                     try {
-                        val rawStats = NativeProxy.getStats() ?: continue
+                        val rawStats = NativeProxy.getStats()
+                        if (rawStats == null) {
+                            consecutiveHealthFailures++
+                            Log.w(TAG, "Health check: getStats()=null ($consecutiveHealthFailures/$MAX_HEALTH_FAILURES)")
+                            if (consecutiveHealthFailures >= MAX_HEALTH_FAILURES) {
+                                Log.e(TAG, "Native proxy dead (getStats null ${MAX_HEALTH_FAILURES}x), restarting")
+                                consecutiveHealthFailures = 0
+                                scheduleAutoRestartOrStop(getString(R.string.notification_error, "proxy not responding"))
+                            }
+                            continue
+                        }
+                        consecutiveHealthFailures = 0
+
                         val upRaw = extractStat(rawStats, "up=")
                         val downRaw = extractStat(rawStats, "down=")
                         val activeConns = extractStat(rawStats, "active=")
@@ -255,6 +289,9 @@ class TgWsProxyService : Service() {
                         val text = getString(R.string.notification_traffic, formatBytes(totalBytes), active)
                         _lastTraffic.value = text
                         updateNotification(text)
+
+                        // Обновляем реальный статус TG WS для UI
+                        updateTgWsRuntimeStatus(rawStats)
                     } catch (e: Exception) {
                         Log.w(TAG, "Stats update failed", e)
                     }
@@ -272,9 +309,22 @@ class TgWsProxyService : Service() {
 
         lastNotificationContent = content
         lastNotificationAtMs = now
+        showNotification(content)
+    }
+
+    /** Одна карточка на всё приложение: startForeground заодно обновляет её текст. */
+    private fun showNotification(content: String) {
         try {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.notify(NOTIFICATION_ID, createNotification(content))
+            val notification = RuntimeNotification.build(this, RuntimeNotification.runningMode(), content)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    RuntimeNotification.ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(RuntimeNotification.ID, notification)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to update notification", e)
         }
@@ -329,8 +379,10 @@ class TgWsProxyService : Service() {
             statsJob = null
 
             requestNativeStop("restart")
-            releaseWakeLock()
             updateRunningState(false)
+            PreferenceManager.getDefaultSharedPreferences(this@TgWsProxyService).edit()
+                .putString(EwenloyTgWsServiceExtension.EWENLOY_TG_RUNTIME_STATUS_KEY, EwenloyTgWsServiceExtension.TG_STATUS_DISABLED)
+                .apply()
             delay(350)
 
             startProxy(
@@ -372,9 +424,154 @@ class TgWsProxyService : Service() {
         return "%.2fGB".format(bytes / (1024 * 1024 * 1024))
     }
 
+    /**
+     * Обновляет реальный статус TG WS прокси для UI.
+     * Важно: ws=/cf=/tcp_fb= в GetStats() — НАКОПИТЕЛЬНЫЕ счётчики за всю сессию,
+     * поэтому «живость» определяем по active, а direct — по приросту tcp_fb.
+     */
+    private fun updateTgWsRuntimeStatus(rawStats: String) {
+        val active = extractStat(rawStats, "active=").toIntOrNull() ?: 0
+        val tcpFb = extractStat(rawStats, "tcp_fb=").toLongOrNull() ?: 0L
+        val tcpFallbackGrew = tcpFb > lastTcpFallbackStat
+        lastTcpFallbackStat = tcpFb
+
+        val status = when {
+            active <= 0 -> EwenloyTgWsServiceExtension.TG_STATUS_IDLE
+            tcpFallbackGrew -> EwenloyTgWsServiceExtension.TG_STATUS_DIRECT
+            else -> EwenloyTgWsServiceExtension.TG_STATUS_WS
+        }
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putString(EwenloyTgWsServiceExtension.EWENLOY_TG_RUNTIME_STATUS_KEY, status)
+            .apply()
+    }
+
+    /**
+     * Регистрируется ОДИН раз на процесс сервиса: повторная регистрация на каждый
+     * startProxy давала накопление колбэков и лавину перезапусков (CM сразу
+     * присылает onAvailable для уже активной сети).
+     */
+    private fun registerNetworkCallback() {
+        if (networkCallback != null) return
+        try {
+            val cm = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    val now = SystemClock.elapsedRealtime()
+                    // Стартовый колбэк (сеть уже есть) и дребезг Wi-Fi/LTE игнорируем
+                    if (now - networkRegisteredAtMs < NETWORK_IGNORE_MS) return
+                    if (now - lastNetworkRestartMs < NETWORK_DEBOUNCE_MS) return
+                    if (!_isRunning.value || stopInProgress) return
+                    lastNetworkRestartMs = now
+                    LogManager.app("сеть изменилась: перезапуск ядра для сброса кулдаунов")
+                    restartProxy()
+                }
+            }
+            networkRegisteredAtMs = SystemClock.elapsedRealtime()
+            cm.registerNetworkCallback(request, callback)
+            networkCallback = callback
+        } catch (e: Exception) {
+            LogManager.app("сеть: не удалось подписаться на события (${e.message})", error = true)
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        try {
+            val cb = networkCallback ?: return
+            val cm = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            cm.unregisterNetworkCallback(cb)
+            networkCallback = null
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to unregister network callback", e)
+        }
+    }
+
+    /**
+     * Дешёвый health-check: раз в 5 секунд пробуем TCP-коннект на порт прокси.
+     * Нативная библиотека при падении рантайма не уведомляет Kotlin, поэтому
+     * единственный надёжный признак жизни — открытый порт.
+     * Раз в минуту пишем heartbeat в файл: по последней строке видно, когда процесс умер.
+     */
+    private fun startHealthJob() {
+        healthJob?.cancel()
+        healthJob = serviceScope.launch {
+            var failures = 0
+            var lastBeatMs = 0L
+            while (isActive) {
+                delay(HEALTH_CHECK_MS)
+                if (!_isRunning.value || stopInProgress) {
+                    failures = 0
+                    continue
+                }
+                if (!isProxyPortAlive(lastBindIp, lastPort)) {
+                    failures++
+                    LogManager.app(
+                        "health: порт $lastPort не отвечает ($failures/$MAX_HEALTH_FAILURES)"
+                    )
+                    if (failures >= MAX_HEALTH_FAILURES) {
+                        failures = 0
+                        healthRestarts++
+                        if (healthRestarts <= MAX_HEALTH_RESTARTS) {
+                            LogManager.app(
+                                "health: ядро мертво -> перезапуск $healthRestarts/$MAX_HEALTH_RESTARTS",
+                                error = true
+                            )
+                            restartProxy()
+                        } else {
+                            LogManager.app(
+                                "health: лимит перезапусков исчерпан, останавливаю прокси",
+                                error = true
+                            )
+                            updateNotification(
+                                getString(R.string.notification_error, "proxy is dead"),
+                                force = true
+                            )
+                            stopProxy()
+                        }
+                    }
+                    continue
+                }
+                failures = 0
+                val now = System.currentTimeMillis()
+                if (now - lastBeatMs >= HEARTBEAT_MS) {
+                    lastBeatMs = now
+                    val stats = try {
+                        NativeProxy.getStats()
+                    } catch (t: Throwable) {
+                        null
+                    }
+                    LogManager.app("beat: ${stats ?: "статистики нет"}")
+                }
+            }
+        }
+    }
+
+    private fun isProxyPortAlive(bindIp: String, port: Int): Boolean {
+        if (port <= 0) return false
+        val host = when (bindIp) {
+            "0.0.0.0" -> "127.0.0.1"
+            "::", "[::]" -> "::1"
+            else -> bindIp
+        }
+        return try {
+            java.net.Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), PORT_PROBE_TIMEOUT_MS)
+                true
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun stopProxy() {
         if (stopInProgress) return
         stopInProgress = true
+        LogManager.app("stop: пользователь/сервис остановил прокси")
+        healthJob?.cancel()
+        healthJob = null
+        unregisterNetworkCallback()
         restartJob?.cancel()
         restartJob = null
         statsJob?.cancel()
@@ -382,24 +579,25 @@ class TgWsProxyService : Service() {
         // Используем stopScope: он не отменяется в onDestroy(),
         // поэтому уведомление гарантированно убирается
         stopScope.launch {
-            updateNotification(getString(R.string.notification_stopping), force = true)
             _lastTraffic.value = null
-            requestNativeStop("stop")
-            releaseWakeLock()
+            // Состояние переключаем ДО остановки натива: иначе UI и шторка
+            // остаются на тексте «Остановка прокси», пока сервис жив.
             updateRunningState(false)
+            PreferenceManager.getDefaultSharedPreferences(this@TgWsProxyService).edit()
+                .putString(EwenloyTgWsServiceExtension.EWENLOY_TG_RUNTIME_STATUS_KEY, EwenloyTgWsServiceExtension.TG_STATUS_DISABLED)
+                .apply()
+            requestNativeStop("stop")
+            RuntimeNotification.sync(this@TgWsProxyService)
+            // DETACH только если остался живой ByeDPI: карточка общая.
+            // Если не осталось ничего — убираем её совсем, иначе висит «Остановка прокси».
+            val nothingElseRunning = RuntimeNotification.runningMode() == null && !_isRunning.value
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopForeground(if (nothingElseRunning) STOP_FOREGROUND_REMOVE else STOP_FOREGROUND_DETACH)
             } else {
                 @Suppress("DEPRECATION")
-                stopForeground(true)
+                stopForeground(nothingElseRunning)
             }
-            // Явно снимаем уведомление: stopForeground(REMOVE) не всегда
-            // убирает нотификации, обновлённые через NotificationManager.notify()
-            try {
-                getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to cancel notification", e)
-            }
+            RuntimeNotification.sync(this@TgWsProxyService)
             stopSelf()
         }
     }
@@ -444,62 +642,14 @@ class TgWsProxyService : Service() {
         }
     }
 
-    private fun acquireWakeLock() {
-        try {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "TgWsProxy::ServiceWakeLock"
-            ).apply {
-                // Acquire with timeout. System may ignore indefinite wakelocks.
-                acquire(WAKELOCK_TIMEOUT_MS)
-            }
-            Log.d(TAG, "WakeLock acquired (${WAKELOCK_TIMEOUT_MS / 60000}min)")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to acquire WakeLock", e)
-        }
-    }
-
-    /**
-     * Periodically refresh wakelock to prevent system from expiring it.
-     */
-    private fun refreshWakeLock() {
-        try {
-            wakeLock?.let {
-                if (it.isHeld) {
-                    it.release()
-                }
-            }
-            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "TgWsProxy::ServiceWakeLock"
-            ).apply {
-                acquire(WAKELOCK_TIMEOUT_MS)
-            }
-            Log.d(TAG, "WakeLock refreshed")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to refresh WakeLock", e)
-        }
-    }
-
-    private fun releaseWakeLock() {
-        try {
-            wakeLock?.let {
-                if (it.isHeld) {
-                    it.release()
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to release WakeLock", e)
-        }
-        wakeLock = null
-    }
-
     private fun updateRunningState(isRunning: Boolean) {
         _isRunning.value = isRunning
         if (!isRunning) {
             _isVerifiedRunning.value = false
+        }
+        // Плитка быстрых настроек должна узнать о смене состояния сразу
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            QuickTileService.updateTile()
         }
     }
 
@@ -524,55 +674,21 @@ class TgWsProxyService : Service() {
         }
     }
 
-    private fun createNotification(content: String): Notification {
-        val openIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val openPendingIntent = PendingIntent.getActivity(
-            this, 1, openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val stopIntent = Intent(this, TgWsProxyService::class.java).apply {
-            action = ACTION_STOP
-        }
-        val restartIntent = Intent(this, TgWsProxyService::class.java).apply {
-            action = ACTION_RESTART
-        }
-        val restartPendingIntent = PendingIntent.getService(
-            this, 2, restartIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val stopPendingIntent = PendingIntent.getService(
-            this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Telegram WS Proxy")
-            .setContentText(content)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(openPendingIntent) // Tap notification → open app
-            .addAction(android.R.drawable.ic_popup_sync, getString(R.string.notification_restart), restartPendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notification_disconnect), stopPendingIntent)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setWhen(notificationStartedAtMs.takeIf { it > 0L } ?: System.currentTimeMillis())
-            .setShowWhen(false)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
-    }
 
     override fun onDestroy() {
+        LogManager.app("service: onDestroy (running=${_isRunning.value})")
         restartJob?.cancel()
         restartJob = null
         statsJob?.cancel()
         statsJob = null
-        releaseWakeLock()
+        healthJob?.cancel()
+        healthJob = null
+        unregisterNetworkCallback()
         if (_isRunning.value) {
             updateRunningState(false)
+            PreferenceManager.getDefaultSharedPreferences(this@TgWsProxyService).edit()
+                .putString(EwenloyTgWsServiceExtension.EWENLOY_TG_RUNTIME_STATUS_KEY, EwenloyTgWsServiceExtension.TG_STATUS_DISABLED)
+                .apply()
         }
         // stopScope НЕ отменяем — стоп-последовательность должна завершиться
         serviceScope.cancel()

@@ -15,6 +15,10 @@
     <string name="service_start_btn">Старт</string>
     <string name="service_pause_btn">Пауза</string>
     <string name="service_stop_btn">Стоп</string>
+    <string name="notification_stop_bbd">Остановить ByeDPI</string>
+    <string name="notification_start_bbd">Запустить ByeDPI</string>
+    <string name="notification_stop_tg">Остановить TG WS</string>
+    <string name="notification_start_tg">Запустить TG WS</string>
     <string name="service_paused_text">Приостановлен</string>
     <string name="open_editor">Редактор</string>
     <string name="settings">Настройки</string>
@@ -71,7 +75,7 @@
     <string name="byedpi_tlsrec_enabled_setting">Разделить TLS запись</string>
     <string name="byedpi_tlsrec_position_setting">Позиция разделения TLS записи</string>
     <string name="byedpi_tlsrec_at_sni_setting">Разделить TLS запись в SNI</string>
-    <string name="version">ByeByeDPI</string>
+    <string name="version">ByeByeDPI x tg</string>
     <string name="source_code_link">Исходный код</string>
     <string name="byedpi_readme_link">Что все это значит?</string>
     <string name="failed_to_start">Не удалось запустить %1$s</string>
@@ -280,6 +284,8 @@
     <string name="ewenloy_tg_open_proxy_summary">Открыть ссылку SOCKS5-прокси ByeDPI в Telegram</string>
     <string name="ewenloy_tg_open_proxy_error">Не удалось открыть Telegram-ссылку</string>
     <string name="ewenloy_tg_choose_client">Выберите клиент Telegram</string>
+    <string name="ewenloy_tg_link_copied">Клиент Telegram не найден — ссылка скопирована в буфер обмена</string>
+    <string name="ewenloy_tg_not_ready">Сначала включите TG WS Прокси</string>
     
     <string name="tg_ws_cf_enabled_title">CloudFlare CDN</string>
     <string name="tg_ws_cf_enabled_summary">Маршрутизация через CF WebSocket-домены (стабильнее на некоторых сетях)</string>
@@ -292,6 +298,7 @@
     <string name="tg_ws_secret_not_generated">Будет сгенерирован при первом запуске</string>
     <string name="tg_ws_secret_copy_btn">Скопировать</string>
     <string name="tg_ws_toggle_btn">TG WS Прокси</string>
+    <string name="quick_tile_mode_title">Что переключает плитка</string>
     <string name="ewenloy_tg_diagnostics_title">TG WS Diagnostics</string>
     <string name="ewenloy_tg_diagnostics_summary">Живые метрики и последний служебный лог</string>
     <string name="ewenloy_tg_diagnostics_dialog_title">TG WS Diagnostics (live)</string>

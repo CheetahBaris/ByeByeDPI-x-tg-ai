@@ -1,4 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.Properties
 
 plugins {
@@ -24,6 +27,23 @@ val releaseKeyPassword = signingSecret("KEY_PASSWORD")
 val releaseSigningReady = releaseKeystoreFile.exists() &&
         releaseKeystorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null
 
+// Метка сборки: попадает в отчёт диагностики и в шапку файлового лога,
+// чтобы по присланному логу сразу было видно, какая именно сборка у человека.
+val buildGitHash: String = runCatching {
+    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().readText().trim()
+    process.waitFor()
+    output.ifEmpty { "nogit" }
+}.getOrElse { "nogit" }
+
+val buildTimeStamp: String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+    .format(Date())
+
+val buildStamp: String = "$buildGitHash | $buildTimeStamp"
+
 android {
     namespace = "io.github.romanvht.byedpi"
     //noinspection GradleDependency
@@ -34,8 +54,11 @@ android {
         minSdk = 21
         //noinspection OldTargetApi
         targetSdk = 34
-        versionCode = 21
-        versionName = "2.1.0"
+        versionCode = 27
+        versionName = "2.0.7"
+
+        // Build stamp: shows up in diagnostics and in the log header.
+        buildConfigField("String", "BUILD_STAMP", "\"$buildStamp\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

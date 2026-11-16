@@ -22,7 +22,6 @@ import io.github.romanvht.byedpi.utility.*
 @SuppressLint("VpnServicePolicy")
 class ByeDpiVpnService : VpnService() {
     companion object {
-        internal const val FOREGROUND_SERVICE_ID = 1
         private const val PAUSE_NOTIFICATION_ID = 3
         private const val NOTIFICATION_CHANNEL_ID = "ByeDPIVpn"
         private const val TAG = "ByeDpiVpnService"
@@ -85,18 +84,11 @@ class ByeDpiVpnService : VpnService() {
     private fun startForeground() {
         val notifications = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notifications.cancel(PAUSE_NOTIFICATION_ID)
-        val notification: Notification = createConnectionNotification(
-            this,
-            NOTIFICATION_CHANNEL_ID,
-            R.string.notification_title,
-            R.string.vpn_notification_content,
-            Mode.VPN,
-            tgWsExt.statusLine().takeIf { it.isNotBlank() },
-        )
+        val notification = RuntimeNotification.build(this, Mode.VPN)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(FOREGROUND_SERVICE_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
+            startForeground(RuntimeNotification.ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
         } else {
-            startForeground(FOREGROUND_SERVICE_ID, notification)
+            startForeground(RuntimeNotification.ID, notification)
         }
     }
 
@@ -149,6 +141,14 @@ class ByeDpiVpnService : VpnService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Не удалось добавить приложение $packageName в белый список", e)
                     }
+                }
+                // Себя исключаем всегда. Иначе при пустом белом списке в туннель уходят
+                // и сокеты самого ByeDPI (движок 1080 и TG WS 1082), получается петля
+                // 1080 <-> 1082: туннель поднимается, живёт пару секунд и рвётся.
+                try {
+                    builder.addDisallowedApplication(applicationContext.packageName)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Не удалось исключить себя из белого списка", e)
                 }
             }
 
