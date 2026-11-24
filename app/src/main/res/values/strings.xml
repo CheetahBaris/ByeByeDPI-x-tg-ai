@@ -289,6 +289,8 @@
     
     <string name="tg_ws_cf_enabled_title">CloudFlare CDN</string>
     <string name="tg_ws_cf_enabled_summary">Маршрутизация через CF WebSocket-домены (стабильнее на некоторых сетях)</string>
+    <string name="tg_ws_disable_secure_title">Выключить TLS для CF-прокси и CF-worker</string>
+    <string name="tg_ws_disable_secure_summary">Включено по умолчанию: соединения к Cloudflare идут на 80-й порт вместо 443 — помогает, когда DPI режет TLS Handshake. Если с ним стало хуже — выключите</string>
     <string name="tg_ws_pool_size_title">WS Pool размер</string>
     <string name="tg_ws_pool_size_summary">Количество заранее подготовленных WebSocket-соединений (больше = быстрее первое подключение)</string>
     <string name="tg_ws_secret_title">Секрет MTProto</string>
