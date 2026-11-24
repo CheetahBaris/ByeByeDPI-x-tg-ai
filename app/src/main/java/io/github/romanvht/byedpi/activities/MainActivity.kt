@@ -29,7 +29,6 @@ import io.github.romanvht.byedpi.data.*
 import io.github.romanvht.byedpi.databinding.ActivityMainBinding
 import io.github.romanvht.byedpi.ewenloy.tgws.EwenloyTgWsServiceExtension
 import io.github.romanvht.byedpi.ewenloy.tgws.TgWsProxyService
-import io.github.romanvht.byedpi.lab.LabActivity
 import io.github.romanvht.byedpi.services.ServiceManager
 import io.github.romanvht.byedpi.services.TestService
 import io.github.romanvht.byedpi.services.appStatus
@@ -338,11 +337,6 @@ class MainActivity : BaseActivity() {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.action_ai_lab -> {
-                startActivity(Intent(this, LabActivity::class.java))
-                true
-            }
-
             R.id.action_diagnostics -> {
                 showDiagnostics()
                 true

@@ -34,7 +34,6 @@ app/src/main/jniLibs/
 
 # Signing secrets (never commit)
 *.jks
-*.jks.base64
 *.keystore
 keystore.properties
 signing.properties
@@ -65,7 +64,6 @@ MIGRATION-TGWS.md
 UI-REDESIGN-PLAN.md
 AUTHORS.md
 *.private.md
-docs/AI_LAB_MIGRATION.md
 .env
 .env.*
 
