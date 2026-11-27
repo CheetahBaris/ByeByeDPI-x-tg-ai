@@ -423,4 +423,38 @@
     <string name="lab_copy_done">Логи скопированы в буфер обмена</string>
     <string name="lab_logs_empty">Логов пока нет — запусти подбор.</string>
     <string name="lab_clear_btn">Очистить</string>
+
+    <!-- Восстановлено после конфликта слияния: отсутствовало в values/strings.xml,
+         из-за чего сборка падала (resource not found). -->
+    <string name="settings_screen_failed">Не удалось открыть экран настроек</string>
+    <string name="tg_ws_logs_shared">Логи сохранены: %1$s</string>
+    <string name="tg_ws_logs_share_failed">Не удалось поделиться логами</string>
+
+    <!-- Настройки TG WS (xml/tg_ws_settings.xml и main_settings.xml) -->
+    <string name="tg_ws_settings_title">Настройки TG WS Proxy</string>
+    <string name="tg_ws_settings_summary">Секрет, DC, Cloudflare, буферы и диагностика туннеля</string>
+    <string name="tg_ws_category_secret">MTProto</string>
+    <string name="tg_ws_verbose_title">Подробный лог ядра</string>
+    <string name="tg_ws_verbose_summary">Дополнительные сообщения нативного ядра в логах (для диагностики)</string>
+    <string name="tg_ws_proxy_protocol_title">Proxy Protocol</string>
+    <string name="tg_ws_proxy_protocol_summary">Передавать реальный IP клиента через PROXY protocol v2</string>
+    <string name="tg_ws_category_dc">Адреса датацентров Telegram</string>
+    <string name="tg_ws_dc_hint">IP-адрес датацентра</string>
+    <string name="tg_ws_cfproxy_category">CloudFlare прокси</string>
+    <string name="tg_ws_cfproxy_h2_title">HTTP/2 для CF-прокси</string>
+    <string name="tg_ws_cfproxy_h2_summary">Использовать h2 вместо HTTP/1.1 при работе через Cloudflare</string>
+    <string name="tg_ws_cfproxy_user_domain_title">Свой домен CF-прокси</string>
+    <string name="tg_ws_cfproxy_user_domain_summary">Домен вашего Cloudflare Worker для трафика Telegram (пусто — встроенные)</string>
+    <string name="tg_ws_cfworker_category">CF Worker</string>
+    <string name="tg_ws_cfworker_domains_title">Домены CF Worker</string>
+    <string name="tg_ws_cfworker_domains_summary">Список доменов Worker через запятую (используются, когда включён режим Worker)</string>
+    <string name="tg_ws_faketls_category">FakeTLS</string>
+    <string name="tg_ws_faketls_domain_title">Домен FakeTLS</string>
+    <string name="tg_ws_faketls_domain_summary">SNI-домен для имитации TLS handshake (пусто — по умолчанию)</string>
+    <string name="tg_ws_logs_category">Логи</string>
+    <string name="tg_ws_advanced_category">Дополнительно</string>
+    <string name="tg_ws_test_dc_title">Проверять DC при запуске</string>
+    <string name="tg_ws_test_dc_summary">Пинговать адреса датацентров и выбирать живой перед подключением</string>
+    <string name="tg_ws_buffer_size_title">Размер буфера WS</string>
+    <string name="tg_ws_buffer_size_summary">Размер буфера WebSocket-соединений (больше = выше пропускная способность, больше память)</string>
 </resources>
