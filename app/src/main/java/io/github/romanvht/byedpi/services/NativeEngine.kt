@@ -7,7 +7,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.net.Network
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -220,19 +219,6 @@ internal class NativeEngine(
 
     suspend fun awaitConfigured() {
         configured.await()
-    }
-
-    /**
-     * Привязывает процесс движка к сети (null — системная по умолчанию).
-     * Вызывать после [connect] и до [start], чтобы ciadpi создавал сокеты
-     * уже в нужной сети. Используется лабораторией AI-подбора.
-     */
-    fun setNetwork(network: Network?) {
-        val data = Bundle().apply {
-            if (network != null) putParcelable(EngineProtocol.NETWORK, network)
-        }
-        runCatching { send(EngineProtocol.SET_NETWORK, data) }
-            .onFailure { Log.w(TAG, "Could not set engine network", it) }
     }
 
     suspend fun awaitStarted() {
